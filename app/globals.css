@@ -985,6 +985,27 @@ a { color: var(--text-link); text-decoration: none; }
   cursor: not-allowed;
 }
 
+/* ────────────── Checkbox / Radio 전역 규격 ──────────────
+   어떤 목록·다이얼로그·체크리스트에서든 동일 사이즈/색상.
+   .table / .checklist-item 등 컨텍스트별 추가 규칙은 이 위에 얹기만 함. */
+input[type="checkbox"],
+input[type="radio"] {
+  width: 14px;
+  height: 14px;
+  min-width: 14px;
+  min-height: 14px;
+  accent-color: var(--brand);
+  cursor: pointer;
+  margin: 0;
+  vertical-align: middle;
+  flex: 0 0 auto;
+}
+input[type="checkbox"]:disabled,
+input[type="radio"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 /* ────────────── Pill 규격 시스템 ──────────────
    모든 알약형 요소(.chip / .status / .tag / .badge)는
    동일한 border-radius(pill), 동일한 인라인 alignment.
@@ -1210,14 +1231,7 @@ a { color: var(--text-link); text-decoration: none; }
   padding-right: 0;
   text-align: center;
 }
-.table input[type="checkbox"] {
-  width: 14px;
-  height: 14px;
-  accent-color: var(--brand);
-  cursor: pointer;
-  margin: 0;
-  vertical-align: middle;
-}
+/* 체크박스 — 전역 input[type=checkbox] 규격 사용 */
 .table tbody tr.selected-row { background: var(--brand-bg); }
 .table tbody tr.selected-row:hover { background: var(--brand-bg); }
 
@@ -1742,12 +1756,7 @@ a { color: var(--text-link); text-decoration: none; }
   user-select: none;
 }
 .checklist-item:hover { color: var(--text-main); }
-.checklist-item input[type="checkbox"] {
-  width: 15px;
-  height: 15px;
-  accent-color: var(--brand);
-  cursor: pointer;
-}
+/* .checklist-item input — 전역 input[type=checkbox] 규격 사용 */
 .checklist-item.checked { color: var(--text-sub); text-decoration: line-through; text-decoration-color: var(--text-weak); }
 
 /* ────────────── Lifecycle Pipeline (차량 상태 파이프라인) ────────────── */
