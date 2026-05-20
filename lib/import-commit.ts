@@ -3,6 +3,8 @@
 import type {
   Contract, Vehicle, CompanyCode, VehicleStatus, BankTransaction, CardTransaction, Company,
 } from './types';
+import { normalizeKoreanDate } from './parsers/date';
+import { normalizeIdent, inferKind, formatIdent, type CustomerKind } from './ident';
 
 type Row = Record<string, unknown>;
 
@@ -25,27 +27,27 @@ function toNum(v: unknown): number {
 }
 
 function toDate(v: unknown): string {
+  // 위임 — lib/parsers/date.ts 의 normalizeKoreanDate가 모든 포맷 처리:
+  // yyyy-mm-dd / yy-mm-dd / yyyymmdd / yymmdd / yyyy.mm.dd / yyyy/mm/dd / 한글 / 엑셀 직렬
   if (v == null || v === '') return '';
-  if (v instanceof Date) return v.toISOString().slice(0, 10);
-  const s = String(v).trim();
-  // 이미 YYYY-MM-DD
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-  // YYYY/MM/DD or YYYY.MM.DD
-  const m = s.match(/^(\d{4})[./](\d{1,2})[./](\d{1,2})/);
-  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
-  // 엑셀 시리얼 숫자
-  const n = Number(s);
-  if (Number.isFinite(n) && n > 25000 && n < 80000) {
-    const d = new Date(Date.UTC(1899, 11, 30) + n * 86400000);
-    return d.toISOString().slice(0, 10);
-  }
-  return '';
+  if (v instanceof Date) return normalizeKoreanDate(v);
+  if (typeof v === 'number') return normalizeKoreanDate(v);
+  return normalizeKoreanDate(String(v));
 }
 
 function pickCompany(v: unknown): CompanyCode {
   const s = toStr(v);
   for (const c of COMPANIES) if (s.includes(c)) return c;
   return '아이카';
+}
+
+function pickCustomerKind(v: unknown): CustomerKind | undefined {
+  const s = toStr(v);
+  if (!s) return undefined;
+  if (s.includes('법인')) return '법인';
+  if (s.includes('사업자') || s.includes('개인사업')) return '사업자';
+  if (s.includes('개인')) return '개인';
+  return undefined;
 }
 
 function pickVehicleStatus(v: unknown, hasDelivered: boolean): VehicleStatus {
@@ -126,8 +128,12 @@ export function parseContractRow(row: Row): Omit<Contract, 'id'> | null {
   const longTermRaw = toStr(get(row, '장단기', 'longTerm'));
   const longTerm = longTermRaw ? longTermRaw.includes('장기') : termMonths >= 12;
 
-  const regNoRaw = toStr(get(row, '등록번호', '주민번호', 'customerRegNo'));
-  const regNoMasked = regNoRaw ? maskRegNo(regNoRaw) : undefined;
+  // 등록번호 — 주민/사업자/법인 어느 거든 들어올 수 있음. 자릿수로 자동 추정.
+  const identRaw = toStr(get(row, '등록번호', '주민번호', '사업자번호', '법인번호', 'customerRegNo', 'customerIdentNo'));
+  const kindHint = pickCustomerKind(get(row, '구분', '계약자구분', 'customerKind'));
+  const identDigits = normalizeIdent(identRaw);
+  const customerKind = inferKind(identDigits, kindHint);
+  const regNoMasked = identDigits ? formatIdent(identDigits, customerKind, { mask: true }) : undefined;
 
   const yy = contractDate.slice(2, 4);
   const mm = contractDate.slice(5, 7);
@@ -139,6 +145,8 @@ export function parseContractRow(row: Row): Omit<Contract, 'id'> | null {
     company,
     manager: toStr(get(row, '담당자', 'manager')) || undefined,
     customerName,
+    customerKind,
+    customerIdentNo: identDigits || undefined,
     customerRegNoMasked: regNoMasked,
     customerPhone1: phone1,
     customerPhone2: toStr(get(row, '연락처2', 'customerPhone2')) || undefined,

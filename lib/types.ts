@@ -29,7 +29,11 @@ export type Contract = {
   manager?: string;            // 담당자
   // 고객 (임베드)
   customerName: string;
-  customerRegNoMasked?: string; // 마스킹 표시용
+  customerKind?: '개인' | '사업자' | '법인';
+  /** 식별번호 — kind에 따라 주민번호/사업자번호/법인번호 1개. raw 그대로 저장 */
+  customerIdentNo?: string;
+  /** @deprecated customerIdentNo + customerKind 로 derive — 호환 위해 유지, 신규 코드는 maskIdent() 사용 */
+  customerRegNoMasked?: string;
   customerPhone1: string;
   customerPhone2?: string;
   customerRegion?: string;

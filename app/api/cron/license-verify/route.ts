@@ -23,6 +23,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getAdminRtdb } from '@/lib/firebase/admin';
 import type { Contract } from '@/lib/types';
+import { birthFromIdent, inferKind } from '@/lib/ident';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300; // 5분 — 100건+ 처리
@@ -81,7 +82,7 @@ export async function GET(req: NextRequest) {
     const result = await callVerify({
       licenseNo: c.customerLicenseNo!,
       customerName: c.customerName,
-      birth: c.customerRegNoMasked,
+      birth: birthFromIdent(c.customerIdentNo, inferKind(c.customerIdentNo, c.customerKind)),
     });
 
     const before = c.customerLicenseStatus;

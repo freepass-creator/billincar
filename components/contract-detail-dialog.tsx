@@ -10,6 +10,7 @@ import {
 import { DialogRoot, DialogContent, DialogBody, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import type { Contract, VehicleStatus } from '@/lib/types';
 import { formatCurrency, formatDateFull, daysSince } from '@/lib/utils';
+import { contractIdentMasked, birthFromIdent, inferKind } from '@/lib/ident';
 import { TODAY } from '@/lib/mock-data';
 import {
   validateDocument, summarizeIssues,
@@ -638,13 +639,15 @@ function VehicleStatusTab({ c, onUpdate }: { c: Contract; onUpdate: (u: Contract
 /* ─────────────── 계약정보 탭 (고객 + 조건 + 비고) ─────────────── */
 
 function ContractInfoTab({ c }: { c: Contract }) {
+  const identMasked = contractIdentMasked(c);
   return (
     <div className="detail-stack">
       <Section icon={<User size={12} weight="duotone" />} title="고객">
         <div className="detail-grid-2">
           <div>
             <Field label="이름" value={c.customerName} />
-            <Field label="등록번호" value={c.customerRegNoMasked || '-'} mono />
+            <Field label="구분" value={c.customerKind || '-'} />
+            <Field label="등록번호" value={identMasked || '-'} mono />
             <Field label="연락처" value={c.customerPhone1} mono />
             <Field label="연락처2" value={c.customerPhone2 || '-'} mono />
           </div>
@@ -1159,7 +1162,8 @@ function LicenseVerifySection({ c, onUpdate }: { c: Contract; onUpdate: (u: Cont
       const ltype = (raw.license_type ?? '').trim();
       const expiry = (raw.expiry_date ?? '').trim();
 
-      const contractBirth = contractBirthFromMasked(c.customerRegNoMasked);
+      const contractBirth = birthFromIdent(c.customerIdentNo, inferKind(c.customerIdentNo, c.customerKind))
+        ?? contractBirthFromMasked(c.customerRegNoMasked);
       const nameMatch = holder && c.customerName ? norm(holder) === norm(c.customerName) : undefined;
       const birthMatch = birth && contractBirth ? birth === contractBirth : undefined;
 
@@ -1191,7 +1195,7 @@ function LicenseVerifySection({ c, onUpdate }: { c: Contract; onUpdate: (u: Cont
         body: JSON.stringify({
           licenseNo: licenseNo.trim(),
           customerName: c.customerName,
-          birth: c.customerRegNoMasked,
+          birth: birthFromIdent(c.customerIdentNo, inferKind(c.customerIdentNo, c.customerKind)) ?? c.customerRegNoMasked,
         }),
       });
       const json = await res.json();

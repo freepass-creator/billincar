@@ -8,6 +8,7 @@
 import { useMemo } from 'react';
 import { useContracts } from './firebase/contracts-store';
 import type { Contract as JpkContract } from './types';
+import { contractIdentMasked } from './ident';
 
 export type Contract = {
   contractNo: string;
@@ -29,8 +30,8 @@ function adapt(c: JpkContract): Contract {
     plate: c.vehiclePlate,
     customerName: c.customerName,
     customerPhone: c.customerPhone1 ?? '',
-    customerKind: '개인',
-    customerIdent: c.customerRegNoMasked ?? '',
+    customerKind: c.customerKind === '법인' ? '사업자' : (c.customerKind ?? '개인'),
+    customerIdent: contractIdentMasked(c),
     customerAddress: '',
     startDate: c.contractDate,
     endDate: c.returnScheduledDate ?? '',

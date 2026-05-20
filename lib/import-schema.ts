@@ -37,7 +37,8 @@ export const CONTRACT_COLUMNS: ColumnSpec[] = [
   { label: '월대여료',     field: 'monthlyRent',      required: true,  example: '1500000', hint: '원 단위 숫자' },
   { label: '결제일',       field: 'paymentDay',       required: true,  example: '15', hint: '매월 1~31일 중' },
 
-  { label: '등록번호',     field: 'customerRegNo',    required: false, example: '900101-1234567', hint: '저장 시 마스킹' },
+  { label: '구분',         field: 'customerKind',     required: false, example: '개인', hint: '개인/사업자/법인 — 미입력 시 등록번호 자릿수로 자동 추정' },
+  { label: '등록번호',     field: 'customerIdentNo',  required: false, example: '900101-1234567', hint: '주민/사업자/법인 번호 — 자릿수로 자동 구분. 표시는 마스킹' },
   { label: '연락처2',      field: 'customerPhone2',   required: false, example: '02-555-1234' },
   { label: '지역',         field: 'customerRegion',   required: false, example: '서울' },
   { label: '행정구',       field: 'customerDistrict', required: false, example: '강남구' },
@@ -65,6 +66,8 @@ export const SNAPSHOT_COLUMNS: ColumnSpec[] = [
   { label: '차량번호',   field: 'vehiclePlate',    required: true,  example: '109호1234',  hint: 'UPSERT 키 — 동일 번호 있으면 갱신' },
   { label: '차명',       field: 'vehicleModel',    required: true,  example: 'K5' },
   { label: '계약자',     field: 'customerName',    required: true,  example: '홍길동' },
+  { label: '구분',       field: 'customerKind',    required: false, example: '개인', hint: '개인/사업자/법인 — 미입력 시 자동 추정' },
+  { label: '등록번호',   field: 'customerIdentNo', required: false, example: '900101-1234567', hint: '주민/사업자/법인 번호 — 자릿수로 자동 구분' },
   { label: '연락처',     field: 'customerPhone1',  required: false, example: '010-1234-5678' },
   { label: '계약시작일', field: 'contractDate',    required: true,  example: '2026-01-01',  hint: 'YYYY-MM-DD' },
   { label: '계약종료일', field: 'returnScheduledDate', required: true, example: '2026-12-31', hint: 'YYYY-MM-DD' },
