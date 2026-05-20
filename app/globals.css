@@ -1588,6 +1588,13 @@ input[type="radio"]:disabled {
   gap: 8px 14px;
   align-items: center;
 }
+/* 2열 폼 — 라벨 + 값 두 쌍 */
+.form-grid-2 {
+  display: grid;
+  grid-template-columns: 110px 1fr 110px 1fr;
+  gap: 10px 14px;
+  align-items: center;
+}
 .form-label {
   color: var(--text-sub);
   text-align: right;

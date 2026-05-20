@@ -230,10 +230,18 @@ export default function Page() {
     });
   }
 
+  /**
+   * 회사 필터 칩 목록.
+   *  - 회사 마스터(companyMaster) 우선 — 등록된 모든 법인이 칩으로 노출 (계약 0건이라도)
+   *  - 마스터에 없는 raw 회사명도 fallback 으로 합쳐서 누락 방지
+   *  - 표시는 displayCompanyName 으로 접미사 제거
+   */
   const companies = useMemo(() => {
-    const set = new Set(contracts.map((c) => c.company));
-    return ['전체', ...Array.from(set)];
-  }, [contracts]);
+    const set = new Set<string>();
+    for (const m of companyMaster) if (m?.name) set.add(m.name);
+    for (const c of contracts) if (c.company) set.add(c.company);
+    return ['전체', ...Array.from(set).sort((a, b) => a.localeCompare(b, 'ko'))];
+  }, [contracts, companyMaster]);
 
   /** 회사 필터만 적용된 모집단 — 사이드패널/요약의 기준 */
   const scopedContracts = useMemo(() => {
@@ -330,14 +338,20 @@ export default function Page() {
               </button>
             );
           })}
-          {companies.length > 1 && (
+          {companies.length > 2 && (
             <>
               <span className="filter-divider" />
               {companies.map((co) => {
                 const cnt = companyCounts[co] ?? 0;
+                const label = co === '전체' ? '전체' : displayCompanyName(co, companyMaster);
                 return (
-                  <button key={co} className={`chip ${companyFilter === co ? 'active' : ''}`} onClick={() => setCompanyFilter(co)}>
-                    {co}
+                  <button
+                    key={co}
+                    className={`chip ${companyFilter === co ? 'active' : ''}`}
+                    onClick={() => setCompanyFilter(co)}
+                    title={co}
+                  >
+                    {label}
                     {cnt > 0 && <span className="chip-count">{cnt}</span>}
                   </button>
                 );

@@ -691,7 +691,7 @@ function VehicleManualForm({ onSubmit }: { onSubmit: () => void }) {
       <div className="detail-section">
         <div className="detail-section-header">차량 기본 정보</div>
         <div className="detail-section-body">
-          <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr 110px 1fr', gap: '10px 14px', alignItems: 'center' }}>
+          <div className="form-grid-2">
             <label className="form-label">차대번호</label>
             <input className="input" placeholder="예: KMHJ381ABLU123456" value={vin} onChange={(e) => setVin(e.target.value)} />
 
@@ -1198,7 +1198,7 @@ function ContractManualForm({ onSubmit }: { onSubmit: () => void }) {
       <div className="detail-section">
         <div className="detail-section-header">필수 정보</div>
         <div className="detail-section-body">
-          <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr 110px 1fr', gap: '10px 14px', alignItems: 'center' }}>
+          <div className="form-grid-2">
             <label className="form-label">회사 *</label>
             <div style={{ gridColumn: 'span 3' }}>
               <CompanyPicker value={company} onChange={setCompany} options={companyNames} />
@@ -1222,7 +1222,7 @@ function ContractManualForm({ onSubmit }: { onSubmit: () => void }) {
       <div className="detail-section">
         <div className="detail-section-header">차량</div>
         <div className="detail-section-body">
-          <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr 110px 1fr', gap: '10px 14px', alignItems: 'center' }}>
+          <div className="form-grid-2">
             <label className="form-label">차량번호</label>
             <input className="input" placeholder="미정도 가능" value={plate} onChange={(e) => setPlate(e.target.value)} />
 
@@ -1235,7 +1235,7 @@ function ContractManualForm({ onSubmit }: { onSubmit: () => void }) {
       <div className="detail-section">
         <div className="detail-section-header">계약자 구분 / 운전자 면허</div>
         <div className="detail-section-body">
-          <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr 110px 1fr', gap: '10px 14px', alignItems: 'center' }}>
+          <div className="form-grid-2">
             <label className="form-label">구분</label>
             <select className="input" value={customerKind} onChange={(e) => setCustomerKind(e.target.value as typeof customerKind)} style={{ width: 200 }}>
               <option value="개인">개인</option>
@@ -1305,7 +1305,7 @@ function ContractManualForm({ onSubmit }: { onSubmit: () => void }) {
       <div className="detail-section">
         <div className="detail-section-header">계약 조건 (선택)</div>
         <div className="detail-section-body">
-          <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr 110px 1fr', gap: '10px 14px', alignItems: 'center' }}>
+          <div className="form-grid-2">
             <label className="form-label">반납예정</label>
             <DateInput value={returnDate} onChange={setReturnDate} style={{ width: 200 }} />
 

@@ -88,7 +88,7 @@ function ManualForm({ onSubmit }: { onSubmit: (p: Omit<Penalty, 'id'>) => Promis
       <div className="detail-section">
         <div className="detail-section-header">필수 정보</div>
         <div className="detail-section-body">
-          <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr 110px 1fr', gap: '10px 14px', alignItems: 'center' }}>
+          <div className="form-grid-2">
             <label className="form-label">종류 *</label>
             <div className="filter-bar" style={{ gridColumn: 'span 3' }}>
               {DOC_TYPES.map((t) => (
@@ -116,7 +116,7 @@ function ManualForm({ onSubmit }: { onSubmit: (p: Omit<Penalty, 'id'>) => Promis
       <div className="detail-section">
         <div className="detail-section-header">선택 정보</div>
         <div className="detail-section-body">
-          <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr 110px 1fr', gap: '10px 14px', alignItems: 'center' }}>
+          <div className="form-grid-2">
             <label className="form-label">발급일</label>
             <DateInput value={issueDate} onChange={setIssueDate} style={{ width: 200 }} />
 

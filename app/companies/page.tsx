@@ -496,16 +496,16 @@ function CompanyEditor({
   const canSave = !!draft.name?.trim();
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <header style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <button className="btn btn-ghost" type="button" onClick={onCancel}>
-          <ArrowLeft /> 취소
+      <header style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <button className="btn btn-ghost btn-sm" type="button" onClick={onCancel}>
+          <ArrowLeft size={12} /> 취소
         </button>
-        <h1 style={{ fontSize: 20, fontWeight: 700 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-main)' }}>
           {isNew ? '신규 법인 등록' : `${draft.name} — 수정`}
-        </h1>
+        </div>
         <div style={{ flex: 1 }} />
-        <button className="btn btn-primary" type="button" onClick={onSave} disabled={!canSave}>
-          <FloppyDisk weight="bold" /> {isNew ? '등록' : '저장'}
+        <button className="btn btn-primary btn-sm" type="button" onClick={onSave} disabled={!canSave}>
+          <FloppyDisk size={12} weight="bold" /> {isNew ? '등록' : '저장'}
         </button>
       </header>
 
@@ -521,45 +521,69 @@ function CompanyEditor({
 
 function InfoEditor({ draft, onChange }: { draft: Company; onChange: (c: Company) => void }) {
   const [ocrBusy, setOcrBusy] = useState(false);
-  function handleOcr(_file: File) {
+  const [ocrError, setOcrError] = useState<string | null>(null);
+
+  async function handleOcr(file: File) {
     setOcrBusy(true);
-    setTimeout(() => {
+    setOcrError(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('type', 'business_reg');
+      const { getFirebaseAuth } = await import('@/lib/firebase/client');
+      const auth = getFirebaseAuth();
+      const user = auth?.currentUser;
+      const idToken = user ? await user.getIdToken() : '';
+      const res = await fetch('/api/ocr/extract', {
+        method: 'POST',
+        headers: idToken ? { Authorization: `Bearer ${idToken}` } : undefined,
+        body: fd,
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'OCR 실패');
+      const raw = json.extracted as Record<string, string | null>;
       onChange({
         ...draft,
-        name: draft.name || '(주)○○',
-        bizRegNo: draft.bizRegNo || '000-00-00000',
-        corpRegNo: draft.corpRegNo || '000000-0000000',
-        ceo: draft.ceo || '대표자',
-        address: draft.address || '주소',
-        bizType: draft.bizType || '업태',
-        bizItem: draft.bizItem || '종목',
+        name: (raw.partner_name ?? draft.name) || draft.name,
+        bizRegNo: raw.biz_no ?? draft.bizRegNo,
+        corpRegNo: raw.corp_no ?? draft.corpRegNo,
+        ceo: raw.ceo ?? draft.ceo,
+        address: raw.address ?? draft.address,
+        bizType: raw.industry ?? draft.bizType,
+        bizItem: raw.category ?? draft.bizItem,
       });
+    } catch (e) {
+      setOcrError((e as Error).message ?? String(e));
+    } finally {
       setOcrBusy(false);
-    }, 1400);
+    }
   }
   return (
     <>
       <section className="detail-section">
         <div className="detail-section-header">
-          <span className="icon"><Camera size={12} weight="duotone" /></span>
+          <Camera size={12} weight="duotone" />
           사업자등록증 OCR (선택)
         </div>
         <div className="detail-section-body">
           {ocrBusy ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12, color: 'var(--text-sub)' }}>
-              <CircleNotch weight="bold" style={{ animation: 'spin 1s linear infinite' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 10, color: 'var(--text-sub)' }}>
+              <CircleNotch size={12} weight="bold" style={{ animation: 'spin 1s linear infinite' }} />
               <span style={{ fontSize: 12 }}>분석 중...</span>
             </div>
           ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <input id="companies-ocr-file" type="file" accept="image/*,.pdf" className="hidden"
                 onChange={(e) => { if (e.target.files?.[0]) handleOcr(e.target.files[0]); }} />
-              <button className="btn" type="button" onClick={() => document.getElementById('companies-ocr-file')?.click()}>
-                <Camera /> 등록증 이미지 업로드
+              <button className="btn btn-sm" type="button" onClick={() => document.getElementById('companies-ocr-file')?.click()}>
+                <Camera size={12} weight="duotone" /> 등록증 이미지 업로드
               </button>
               <span style={{ fontSize: 11, color: 'var(--text-weak)' }}>
                 사업자등록증 사진/스캔 → 자동 채움
               </span>
+              {ocrError && (
+                <span style={{ fontSize: 11, color: 'var(--red-text)' }}>오류: {ocrError}</span>
+              )}
             </div>
           )}
         </div>
@@ -568,14 +592,13 @@ function InfoEditor({ draft, onChange }: { draft: Company; onChange: (c: Company
       <section className="detail-section" style={{ marginTop: 14 }}>
         <div className="detail-section-header">기본 정보</div>
         <div className="detail-section-body">
-          <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr 110px 1fr', gap: '10px 14px', alignItems: 'center' }}>
+          <div className="form-grid-2">
             <label className="form-label">코드</label>
             <input
               className="input mono"
               value={draft.code ?? ''}
               onChange={(e) => onChange({ ...draft, code: e.target.value.toUpperCase() })}
               placeholder="자동 (CP01)"
-              style={{ width: 120 }}
             />
             <label className="form-label">사업자번호</label>
             <input className="input mono" value={draft.bizRegNo ?? ''} onChange={(e) => onChange({ ...draft, bizRegNo: e.target.value })} placeholder="000-00-00000" />
