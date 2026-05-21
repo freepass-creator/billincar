@@ -62,10 +62,22 @@ function pickVehicleStatus(v: unknown, hasDelivered: boolean): VehicleStatus {
   return hasDelivered ? '운행' : '구매대기';
 }
 
-/** 헤더 alias resolver — 다양한 컬럼명 허용 */
+/** 헤더 키 정규화 — 공백/별표/대소문자/괄호 등 무시 */
+function normKey(s: string): string {
+  return s.replace(/\s+/g, '').replace(/\*/g, '').replace(/[()]/g, '').toLowerCase();
+}
+
+/** 헤더 alias resolver — 다양한 컬럼명 허용 + fuzzy 매칭 (별표·공백·대소문자 무관) */
 function get(row: Row, ...keys: string[]): unknown {
+  // 1차: 정확 매칭
   for (const k of keys) {
     if (k in row && row[k] != null && row[k] !== '') return row[k];
+  }
+  // 2차: 정규화 매칭 (예: "차량번호" ↔ "차량번호 *" ↔ "차량 번호")
+  const targets = new Set(keys.map(normKey));
+  for (const [rowKey, rowVal] of Object.entries(row)) {
+    if (rowVal == null || rowVal === '') continue;
+    if (targets.has(normKey(rowKey))) return rowVal;
   }
   return undefined;
 }
@@ -295,9 +307,9 @@ export function validateSnapshotRow(row: Row, companies?: Company[]): SnapshotVa
 }
 
 export function parseSnapshotRow(row: Row, companies?: Company[]): SnapshotPatch | null {
-  const plate = toStr(get(row, '차량번호', 'vehiclePlate', 'plate'));
-  const customerName = toStr(get(row, '계약자', '계약자명', 'customerName'));
-  const monthlyRent = toNum(get(row, '월대여료', '월렌트료', 'monthlyRent'));
+  const plate = toStr(get(row, '차량번호', '차량 번호', '차량NO', '차량No', '차량', '번호판', 'vehiclePlate', 'plate'));
+  const customerName = toStr(get(row, '계약자', '계약자명', '임차인', '임차인명', '고객명', '고객', '대여자', '운전자', 'customerName'));
+  const monthlyRent = toNum(get(row, '월대여료', '월 대여료', '월렌트료', '월렌트', '월세', '월 임차료', '임차료', '대여료', 'monthlyRent'));
   if (!plate || !customerName || monthlyRent <= 0) return null;
 
   const regNoOrName = toStr(get(row, '법인등록번호', '법인번호', '사업자번호', '회사명', '회사', 'corpRegNo', 'bizRegNo', 'company'));

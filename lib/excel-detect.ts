@@ -62,7 +62,11 @@ export async function parseExcelFile(file: File): Promise<ParsedSheet[]> {
     const aoa = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, blankrows: false, defval: null }) as unknown[][];
     if (aoa.length < 2) continue;
     const det = detectHeaderRow(aoa);
-    const headers = (aoa[det.headerRow] || []).map((v, i) => (v == null || v === '' ? `col${i + 1}` : String(v).trim()));
+    // 헤더 정규화 — 우리 템플릿이 필수 컬럼 끝에 " *" 를 붙이므로 떼고 매칭
+    const headers = (aoa[det.headerRow] || []).map((v, i) => {
+      if (v == null || v === '') return `col${i + 1}`;
+      return String(v).trim().replace(/\s*\*\s*$/, '').trim();
+    });
     const dataRows = aoa.slice(det.headerRow + 1);
     const rows: Record<string, unknown>[] = dataRows
       .filter((r) => r.some((v) => v != null && String(v).trim() !== ''))
