@@ -14,6 +14,7 @@ import { formatCurrency, formatDateFull, daysSince } from '@/lib/utils';
 import { contractIdentMasked, birthFromIdent, inferKind } from '@/lib/ident';
 import { displayCompanyName } from '@/lib/company-display';
 import { useCompanies } from '@/lib/firebase/companies-store';
+import { useContracts as useContractsList } from '@/lib/firebase/contracts-store';
 import { todayKr } from '@/lib/mock-data';
 import {
   validateDocument, summarizeIssues,
@@ -1014,11 +1015,19 @@ function ScheduleTable({ c, onUpdate }: { c: Contract; onUpdate: (u: Contract) =
 }
 
 function HistoryListTab({ scope, c }: { scope: 'contract' | 'vehicle'; c: Contract }) {
+  const { contracts } = useContractsList();
   const title = scope === 'vehicle' ? '차량 이력' : '계약 이력';
   const target = scope === 'vehicle' ? `차량번호 ${c.vehiclePlate}` : `계약 ${c.contractNo}`;
   const hint = scope === 'vehicle'
-    ? '정비·검사·사고·세차·위반·보험 등 — 차량번호에 영구 귀속'
+    ? '정비·검사·사고·세차·위반·보험 + 같은 차량의 과거/현재 계약 — 차량번호에 영구 귀속'
     : '연락기록·분쟁·클레임·수납이슈·메모 등 — 이 계약에만 귀속';
+
+  // 차량 이력 — 같은 plate 의 다른 계약 (현재 계약 제외, 계약일 내림차순)
+  const sameVehicleContracts = scope === 'vehicle'
+    ? contracts
+        .filter((x) => x.vehiclePlate === c.vehiclePlate && x.id !== c.id)
+        .sort((a, b) => b.contractDate.localeCompare(a.contractDate))
+    : [];
 
   return (
     <Section
@@ -1027,8 +1036,50 @@ function HistoryListTab({ scope, c }: { scope: 'contract' | 'vehicle'; c: Contra
       action={<button type="button" className="btn btn-sm btn-primary">+ 이력 추가</button>}
     >
       <div style={{ fontSize: 11, color: 'var(--text-sub)', marginBottom: 8 }}>{hint}</div>
+
+      {/* 차량 이력 탭일 때 — 같은 차량의 다른 계약 노출 */}
+      {scope === 'vehicle' && sameVehicleContracts.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 11, color: 'var(--text-weak)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            같은 차량 과거/현재 계약 ({sameVehicleContracts.length}건)
+          </div>
+          <table className="table" style={{ fontSize: 11 }}>
+            <thead>
+              <tr>
+                <th style={{ width: 110 }}>계약번호</th>
+                <th>계약자</th>
+                <th>회사</th>
+                <th className="mono">계약기간</th>
+                <th className="num">월대여료</th>
+                <th className="num">미수</th>
+                <th className="center">상태</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sameVehicleContracts.map((p) => (
+                <tr key={p.id}>
+                  <td className="mono">{p.contractNo}</td>
+                  <td>{p.customerName}</td>
+                  <td className="dim">{p.company}</td>
+                  <td className="mono dim">
+                    {p.contractDate?.slice(2)}{p.returnScheduledDate ? ` ~ ${p.returnScheduledDate.slice(2)}` : ''}
+                  </td>
+                  <td className="num mono">₩{formatCurrency(p.monthlyRent ?? 0)}</td>
+                  <td className="num mono" style={{ color: (p.unpaidAmount ?? 0) > 0 ? 'var(--red-text)' : undefined }}>
+                    {(p.unpaidAmount ?? 0) > 0 ? `₩${formatCurrency(p.unpaidAmount!)}` : '-'}
+                  </td>
+                  <td className="center"><span className={`status ${p.status}`}>{p.status}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       <div style={{ padding: 32, color: 'var(--text-weak)', textAlign: 'center', fontSize: 12 }}>
-        아직 {title} 기록이 없습니다.
+        {scope === 'vehicle'
+          ? '정비·사고·검사 이력은 Phase 2 — 등록 UI 준비 중.'
+          : '아직 계약 이력 기록이 없습니다.'}
       </div>
     </Section>
   );
