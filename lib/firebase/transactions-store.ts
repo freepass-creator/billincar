@@ -60,6 +60,32 @@ function useTxStore<T extends { id: string }>(path: string) {
       await set(newRef, { ...row, id });
       return id;
     },
+    update: async (id: string, patch: Partial<T>) => {
+      if (!configured) {
+        setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+        return;
+      }
+      await ensureAuth();
+      const db = getRtdb(); if (!db) return;
+      await rtdbUpdate(ref(db, `${path}/${id}`), patch as unknown as Record<string, unknown>);
+    },
+    updateMany: async (patches: Record<string, Partial<T>>) => {
+      const ids = Object.keys(patches);
+      if (ids.length === 0) return;
+      if (!configured) {
+        setRows((prev) => prev.map((r) => (patches[r.id] ? { ...r, ...patches[r.id] } : r)));
+        return;
+      }
+      await ensureAuth();
+      const db = getRtdb(); if (!db) return;
+      const updates: Record<string, unknown> = {};
+      for (const [id, patch] of Object.entries(patches)) {
+        for (const [k, v] of Object.entries(patch ?? {})) {
+          updates[`${id}/${k}`] = v;
+        }
+      }
+      await rtdbUpdate(ref(db, path), updates);
+    },
     addMany: async (items: Array<Omit<T, 'id'>>) => {
       if (items.length === 0) return [] as T[];
       if (!configured) {

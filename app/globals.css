@@ -1900,6 +1900,8 @@ input[type="radio"]:disabled {
   color: var(--text-main);
 }
 .detail-section-header .icon { color: var(--text-weak); display: flex; }
+/* 헤더 안 텍스트 노드를 flex 로 늘려 우측에 action 버튼이 자동 배치되게 */
+.detail-section-header > .title { flex: 1; }
 .detail-section-body { padding: 10px 12px; }
 
 /* Grid 2-col */

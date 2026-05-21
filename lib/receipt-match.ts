@@ -1,0 +1,219 @@
+/**
+ * 자금일보 자동 매칭 — 은행 입금 → 계약 미납 회차.
+ *
+ * v4 lib/receipt-match.ts 포팅. jpkerp5의 인라인 schedule 모델에 맞게 단순화.
+ *
+ * 알고리즘:
+ *   1) 입금 거래 (withdraw 없고 amount > 0)
+ *   2) counterparty(입금자명) ≈ customerName 일치 계약 찾기
+ *   3) 그 계약의 미납 회차 중 amount 일치하는 회차 검색
+ *   4) 단일 후보면 자동 매칭, 여러 개면 가장 오래된 미납
+ *
+ * 결과:
+ *   - BankTransaction.matchedContractId / matchedScheduleSeq / matchedAt 갱신
+ *   - Contract.schedules 의 해당 회차 status='완료', paidAmount=amount, paidAt 갱신
+ *   - Contract.unpaidAmount / unpaidSeqCount 캐시 재계산
+ */
+
+import type { BankTransaction, Contract, PaymentScheduleInline } from './types';
+import { applyPayment, totalUnpaid, totalUnpaidCount, computeCurrentSeq } from './payment-schedule';
+
+/** 이름 정규화 — 공백 제거, 소문자 */
+function normName(s: string): string {
+  return (s ?? '').replace(/\s+/g, '').toLowerCase();
+}
+
+export type MatchCandidate = {
+  contract: Contract;
+  scheduleSeq: number;
+  scheduleAmount: number;
+  scheduleDueDate: string;
+  /** 매칭 신뢰도 — 'high'(이름+금액 정확), 'medium'(이름만), 'low'(금액만) */
+  confidence: 'high' | 'medium' | 'low';
+};
+
+/**
+ * 한 BankTransaction에 대해 매칭 후보 검색.
+ *  - withdraw 행은 매칭 X (출금은 계약과 무관)
+ *  - 이미 매칭된 트랜잭션은 빈 배열
+ */
+export function findCandidates(tx: BankTransaction, contracts: Contract[]): MatchCandidate[] {
+  if (tx.withdraw && tx.withdraw > 0) return [];
+  if (tx.amount <= 0) return [];
+  if (tx.matchedContractId) return [];
+
+  const out: MatchCandidate[] = [];
+  const cpName = normName(tx.counterparty);
+
+  for (const c of contracts) {
+    if (c.status === '해지') continue;
+    const cName = normName(c.customerName);
+    const driverName = c.driverName ? normName(c.driverName) : '';
+    const nameMatch = cpName && (cpName === cName || cpName === driverName || cName.includes(cpName) || cpName.includes(cName));
+
+    const schedules = c.schedules ?? [];
+    for (const s of schedules) {
+      if (s.status === '완료') continue;
+      const amountMatch = s.amount === tx.amount || (s.status === '부분납' && (s.amount - s.paidAmount) === tx.amount);
+      if (!amountMatch && !nameMatch) continue;
+      out.push({
+        contract: c,
+        scheduleSeq: s.seq,
+        scheduleAmount: s.amount,
+        scheduleDueDate: s.dueDate,
+        confidence: nameMatch && amountMatch ? 'high' : nameMatch ? 'medium' : 'low',
+      });
+    }
+  }
+
+  // 정렬: high → medium → low, 동일 confidence면 dueDate 오래된 순
+  return out.sort((a, b) => {
+    const rank = { high: 0, medium: 1, low: 2 } as const;
+    if (rank[a.confidence] !== rank[b.confidence]) return rank[a.confidence] - rank[b.confidence];
+    return a.scheduleDueDate.localeCompare(b.scheduleDueDate);
+  });
+}
+
+/** 매칭 한 건 적용 — BankTransaction patch + Contract patch 반환 */
+export function applyMatch(
+  tx: BankTransaction,
+  contract: Contract,
+  scheduleSeq: number,
+  actorEmail?: string,
+): {
+  txPatch: Partial<BankTransaction>;
+  contractPatch: Partial<Contract> & { schedules: PaymentScheduleInline[] };
+} {
+  const schedules = (contract.schedules ?? []).map((s) => ({ ...s }));
+  const target = schedules.find((s) => s.seq === scheduleSeq);
+  if (!target) {
+    throw new Error(`회차 ${scheduleSeq} 를 찾을 수 없습니다 (계약 ${contract.contractNo})`);
+  }
+  target.status = '완료';
+  target.paidAmount = target.amount;
+  target.paidAt = tx.txDate;
+
+  const newUnpaid = totalUnpaid(schedules);
+  const newUnpaidCount = totalUnpaidCount(schedules);
+  const newCurrentSeq = computeCurrentSeq(schedules, tx.txDate);
+
+  return {
+    txPatch: {
+      matchedContractId: contract.id,
+      matchedScheduleSeq: scheduleSeq,
+      matchedAt: new Date().toISOString(),
+      matchedBy: actorEmail,
+      subject: tx.subject ?? '대여료수입',
+    },
+    contractPatch: {
+      schedules,
+      unpaidAmount: newUnpaid,
+      unpaidSeqCount: newUnpaidCount,
+      currentSeq: newCurrentSeq,
+      lastPaidDate: tx.txDate,
+      lastPaidAmount: tx.amount,
+    },
+  };
+}
+
+/**
+ * 매칭 해제 — BankTransaction과 Contract 모두 원복.
+ * 회차는 '연체' (또는 부분납이었으면 부분납으로) 복귀.
+ */
+export function reverseMatch(
+  tx: BankTransaction,
+  contract: Contract,
+  today: string,
+): {
+  txPatch: Partial<BankTransaction>;
+  contractPatch: Partial<Contract> & { schedules: PaymentScheduleInline[] };
+} {
+  const schedules = (contract.schedules ?? []).map((s) => ({ ...s }));
+  const target = schedules.find((s) => s.seq === tx.matchedScheduleSeq);
+  if (target) {
+    target.status = '연체';
+    target.paidAmount = 0;
+    target.paidAt = undefined;
+  }
+
+  return {
+    txPatch: {
+      matchedContractId: undefined,
+      matchedScheduleSeq: undefined,
+      matchedAt: undefined,
+      matchedBy: undefined,
+    },
+    contractPatch: {
+      schedules,
+      unpaidAmount: totalUnpaid(schedules),
+      unpaidSeqCount: totalUnpaidCount(schedules),
+      currentSeq: computeCurrentSeq(schedules, today),
+    },
+  };
+}
+
+/**
+ * 일괄 자동매칭 — 미매칭 입금 거래 중 high confidence (이름+금액 모두 일치) 만 자동 적용.
+ * 사용자 확인 후 일괄 commit 용도. medium/low 는 수동 다이얼로그로.
+ */
+export type AutoMatchResult = {
+  tx: BankTransaction;
+  candidate: MatchCandidate;
+};
+
+export function autoMatchAll(
+  txs: BankTransaction[],
+  contracts: Contract[],
+): AutoMatchResult[] {
+  const results: AutoMatchResult[] = [];
+  // 같은 회차에 중복 매칭 방지 — 이미 매칭한 (contractId, seq) 기록
+  const used = new Set<string>();
+  for (const c of contracts) {
+    for (const s of c.schedules ?? []) {
+      if (s.status === '완료') used.add(`${c.id}:${s.seq}`);
+    }
+  }
+  for (const t of txs) {
+    const candidates = findCandidates(t, contracts);
+    const high = candidates.filter((c) => c.confidence === 'high' && !used.has(`${c.contract.id}:${c.scheduleSeq}`));
+    if (high.length === 0) continue;
+    // 가장 오래된 미납 회차 우선
+    const pick = high[0];
+    used.add(`${pick.contract.id}:${pick.scheduleSeq}`);
+    results.push({ tx: t, candidate: pick });
+  }
+  return results;
+}
+
+/**
+ * 선입선출 결제 — 매칭 후보가 없거나 금액 안 맞을 때.
+ * 가장 오래된 미납·부분납 회차부터 차감.
+ */
+export function applyFifoPayment(
+  tx: BankTransaction,
+  contract: Contract,
+): {
+  txPatch: Partial<BankTransaction>;
+  contractPatch: Partial<Contract> & { schedules: PaymentScheduleInline[] };
+  leftover: number;
+} {
+  const schedules = contract.schedules ?? [];
+  const { schedules: newSched, leftover } = applyPayment(schedules, tx.amount, tx.txDate);
+
+  return {
+    txPatch: {
+      matchedContractId: contract.id,
+      matchedAt: new Date().toISOString(),
+      subject: tx.subject ?? '대여료수입',
+    },
+    contractPatch: {
+      schedules: newSched,
+      unpaidAmount: totalUnpaid(newSched),
+      unpaidSeqCount: totalUnpaidCount(newSched),
+      currentSeq: computeCurrentSeq(newSched, tx.txDate),
+      lastPaidDate: tx.txDate,
+      lastPaidAmount: tx.amount,
+    },
+    leftover,
+  };
+}

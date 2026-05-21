@@ -369,20 +369,31 @@ export function applySnapshotToContract(
   };
 }
 
-/* ──────────────── 은행 입금 ──────────────── */
+/* ──────────────── 은행 거래 (입금 + 출금) ──────────────── */
 
+/**
+ * 은행 통장 엑셀 한 행 파싱 — 입금·출금 모두 수용 (자금일보).
+ * 한 줄에 입금/출금 둘 다 0이면 null (헤더 등 잡음).
+ */
 export function parseBankTxRow(row: Row, fileName: string): Omit<BankTransaction, 'id'> | null {
-  const txDate = toDate(get(row, '거래일자', '거래일', '입금일', 'txDate'));
-  const counterparty = toStr(get(row, '입금자', '상대', '예금주', 'counterparty'));
-  const amount = toNum(get(row, '입금액', '금액', 'amount'));
-  if (!txDate || amount <= 0 || !counterparty) return null;
+  const txDate = toDate(get(row, '거래일자', '거래일', '거래일시', '입금일', '출금일', '일자', 'txDate'));
+  const counterparty = toStr(get(row, '입금자', '거래상대', '상대', '예금주', '수취인', 'counterparty'));
+  const deposit = toNum(get(row, '입금액', '입금', '받은금액', 'deposit', 'amount'));
+  const withdraw = toNum(get(row, '출금액', '출금', '지급액', '인출액', 'withdraw'));
+  const balance = toNum(get(row, '잔액', '잔고', 'balance'));
+  if (!txDate) return null;
+  if (deposit <= 0 && withdraw <= 0) return null;
 
   return {
     txDate,
-    amount,
-    counterparty,
-    memo: toStr(get(row, '적요', '메모', 'memo')) || undefined,
-    source: toStr(get(row, '은행', 'source')) || fileName,
+    amount: deposit > 0 ? deposit : 0,
+    withdraw: withdraw > 0 ? withdraw : undefined,
+    balance: balance > 0 ? balance : undefined,
+    counterparty: counterparty || (withdraw > 0 ? '(출금)' : '(미상)'),
+    memo: toStr(get(row, '적요', '내용', '메모', '거래내용', 'memo')) || undefined,
+    source: toStr(get(row, '은행', '거래은행', 'source')) || fileName,
+    account: toStr(get(row, '계좌번호', '계좌', 'account')) || undefined,
+    companyCode: toStr(get(row, '회사', '회사코드', 'companyCode')) || undefined,
     raw: row,
   };
 }

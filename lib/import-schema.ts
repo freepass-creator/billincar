@@ -80,14 +80,17 @@ export const SNAPSHOT_COLUMNS: ColumnSpec[] = [
   { label: '현재미수',   field: 'unpaidAmount',    required: false, example: '1500000',     hint: '오늘 기준 미수 합계 (원). 0이면 정상' },
 ];
 
-/* ─────────────── 계좌 입금 트랜잭션 ─────────────── */
+/* ─────────────── 계좌 거래내역 (입금 + 출금) ─────────────── */
 export const BANK_TX_COLUMNS: ColumnSpec[] = [
   { label: '거래일자',     field: 'txDate',       required: true,  example: '2026-05-14' },
-  { label: '입금자',       field: 'counterparty', required: true,  example: '김효진', hint: '계약자명과 자동 매칭' },
-  { label: '입금액',       field: 'amount',       required: true,  example: '1500000', hint: '입금만 (출금 행은 무시)' },
-  { label: '적요',         field: 'memo',         required: false, example: '5월 대여료' },
-  { label: '잔액',         field: 'balance',      required: false, example: '12345678' },
-  { label: '은행',         field: 'source',       required: false, example: 'KB', hint: 'KB/우리/신한/하나/농협 등' },
+  { label: '입금액',       field: 'amount',       required: false, example: '1500000', hint: '입금 행만' },
+  { label: '출금액',       field: 'withdraw',     required: false, example: '350000',  hint: '출금 행만 (수수료/이체 등)' },
+  { label: '잔액',         field: 'balance',      required: false, example: '12345678', hint: '거래 직후 잔액' },
+  { label: '거래상대',     field: 'counterparty', required: false, example: '김효진',  hint: '입금자 또는 수취인 — 계약자명과 자동매칭' },
+  { label: '적요',         field: 'memo',         required: false, example: '5월 대여료 / 수수료 등' },
+  { label: '계좌번호',     field: 'account',      required: false, example: '110-123-456789', hint: '회사 마스터의 계좌와 자동 매칭' },
+  { label: '은행',         field: 'source',       required: false, example: 'KB',  hint: 'KB/우리/신한/하나/농협 등' },
+  { label: '회사',         field: 'companyCode',  required: false, example: '아이카', hint: '미지정 시 계좌번호로 자동 매핑' },
 ];
 
 /* ─────────────── 자동이체 (CMS) 출금 결과 ─────────────── */

@@ -134,16 +134,29 @@ export type PaymentSchedule = {
   notes?: string;
 };
 
-/** 은행 입금 트랜잭션 */
+/** 은행 거래 — 입금·출금 통합 (자금일보 ledger entry 역할) */
 export type BankTransaction = {
   id: string;
-  txDate: string;
+  txDate: string;              // YYYY-MM-DD (HH:mm 가능)
+  /** 입금액 — 양수, 출금이면 0 또는 미입력 */
   amount: number;
-  counterparty: string;        // 입금자/상대
-  memo?: string;
-  source?: string;             // KB/우리/신한 등
+  /** 출금액 — 양수 (입금 거래는 0/미입력) */
+  withdraw?: number;
+  /** 잔액 (해당 거래 직후) */
+  balance?: number;
+  counterparty: string;        // 입금자/상대 (출금이면 수취인)
+  memo?: string;               // 적요/내용
+  note?: string;               // 사용자 메모 (인라인 편집)
+  source?: string;             // KB/우리/신한/하나/농협 등 — 은행
+  account?: string;            // 계좌번호 (회사 마스터의 BankAccount.accountNo와 매칭)
+  companyCode?: string;        // 회사 코드 (자금일보 회사별 집계용)
+  /** 계정과목 — 분개. ledger-subjects.ts 의 enum */
+  subject?: string;
   matchedContractId?: string;
   matchedScheduleId?: string;
+  matchedScheduleSeq?: number; // schedule 의 회차 번호 (인라인 schedules 매칭용)
+  matchedAt?: string;          // 매칭 처리 시각 (ISO)
+  matchedBy?: string;          // 매칭 처리자 (이메일/uid)
   raw?: Record<string, unknown>;
 };
 

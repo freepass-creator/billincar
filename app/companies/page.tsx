@@ -344,8 +344,8 @@ function FinanceView({ company }: { company: Company }) {
     <>
       <section className="detail-section">
         <div className="detail-section-header">
-          <span className="icon"><Bank size={12} weight="duotone" /></span>
-          <span style={{ flex: 1 }}>계좌 ({accounts.length}개)</span>
+          <Bank size={12} weight="duotone" />
+          <span className="title">계좌 ({accounts.length}개)</span>
         </div>
         <div className="detail-section-body" style={{ padding: 0 }}>
           {accounts.length === 0 ? <Empty msg="등록된 계좌가 없습니다." /> : (
@@ -368,8 +368,8 @@ function FinanceView({ company }: { company: Company }) {
 
       <section className="detail-section" style={{ marginTop: 14 }}>
         <div className="detail-section-header">
-          <span className="icon"><CreditCard size={12} weight="duotone" /></span>
-          <span style={{ flex: 1 }}>법인 카드 ({cards.length}개)</span>
+          <CreditCard size={12} weight="duotone" />
+          <span className="title">법인 카드 ({cards.length}개)</span>
         </div>
         <div className="detail-section-body" style={{ padding: 0 }}>
           {cards.length === 0 ? <Empty msg="등록된 카드가 없습니다." /> : (
@@ -419,7 +419,7 @@ function LocationGroup({ title, icon, items, showCapacity }: {
     <section className="detail-section" style={{ marginBottom: 14 }}>
       <div className="detail-section-header">
         <span className="icon">{icon}</span>
-        <span style={{ flex: 1 }}>{title} ({items.length}곳)</span>
+        <span className="title">{title} ({items.length}곳)</span>
       </div>
       <div className="detail-section-body" style={{ padding: 0 }}>
         {items.length === 0 ? <Empty msg={`등록된 ${title}가 없습니다.`} /> : (
@@ -456,8 +456,8 @@ function DocumentsView({ company }: { company: Company }) {
   return (
     <section className="detail-section">
       <div className="detail-section-header">
-        <span className="icon"><FileText size={12} weight="duotone" /></span>
-        <span style={{ flex: 1 }}>서류 ({docs.length}개)</span>
+        <FileText size={12} weight="duotone" />
+        <span className="title">서류 ({docs.length}개)</span>
       </div>
       <div className="detail-section-body" style={{ padding: 0 }}>
         {docs.length === 0 ? <Empty msg="등록된 서류가 없습니다." /> : (
@@ -634,8 +634,8 @@ function FinanceEditor({ draft, onChange }: { draft: Company; onChange: (c: Comp
     <>
       <section className="detail-section">
         <div className="detail-section-header">
-          <span className="icon"><Bank size={12} weight="duotone" /></span>
-          <span style={{ flex: 1 }}>계좌 ({accounts.length}개)</span>
+          <Bank size={12} weight="duotone" />
+          <span className="title">계좌 ({accounts.length}개)</span>
           <button className="btn btn-sm" type="button" onClick={() => setAccounts([...accounts, {
             id: `acc-${Date.now()}`, bankName: '', accountNo: '', accountHolder: draft.name, purpose: '대여료수납',
           }])}>
@@ -663,8 +663,8 @@ function FinanceEditor({ draft, onChange }: { draft: Company; onChange: (c: Comp
 
       <section className="detail-section" style={{ marginTop: 14 }}>
         <div className="detail-section-header">
-          <span className="icon"><CreditCard size={12} weight="duotone" /></span>
-          <span style={{ flex: 1 }}>법인 카드 ({cards.length}개)</span>
+          <CreditCard size={12} weight="duotone" />
+          <span className="title">법인 카드 ({cards.length}개)</span>
           <button className="btn btn-sm" type="button" onClick={() => setCards([...cards, {
             id: `card-${Date.now()}`, cardName: '', cardCompany: '', cardLast4: '', purpose: '차량유지비',
           }])}>
@@ -717,7 +717,7 @@ function LocationsEditor({ draft, onChange }: { draft: Company; onChange: (c: Co
           <section key={kind} className="detail-section" style={{ marginBottom: 14 }}>
             <div className="detail-section-header">
               <span className="icon">{icon}</span>
-              <span style={{ flex: 1 }}>{kind} ({items.length}곳)</span>
+              <span className="title">{kind} ({items.length}곳)</span>
               <button className="btn btn-sm" type="button" onClick={() => addLocation(kind)}>
                 <Plus weight="bold" /> 추가
               </button>
@@ -770,8 +770,8 @@ function DocumentsEditor({ draft, onChange }: { draft: Company; onChange: (c: Co
   return (
     <section className="detail-section">
       <div className="detail-section-header">
-        <span className="icon"><FileText size={12} weight="duotone" /></span>
-        <span style={{ flex: 1 }}>서류 ({docs.length}개)</span>
+        <FileText size={12} weight="duotone" />
+        <span className="title">서류 ({docs.length}개)</span>
         <button className="btn btn-sm" type="button" onClick={addDoc}>
           <Plus weight="bold" /> 서류 추가
         </button>

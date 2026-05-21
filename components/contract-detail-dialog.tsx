@@ -108,7 +108,7 @@ function Section({
     <div className="detail-section">
       <div className="detail-section-header">
         <span className="icon">{icon}</span>
-        <span style={{ flex: 1 }}>{title}</span>
+        <span className="title">{title}</span>
         {action}
       </div>
       <div className="detail-section-body">{children}</div>
