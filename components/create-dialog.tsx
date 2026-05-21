@@ -1264,14 +1264,27 @@ function ContractManualForm({ onSubmit }: { onSubmit: () => void }) {
               </>
             )}
 
-            <label className="form-label">면허번호</label>
+            <label className="form-label">
+              면허번호
+              {licenseNo && (
+                <span style={{
+                  marginLeft: 6, fontSize: 10,
+                  color: licenseNo.replace(/\D/g, '').length === 12 ? 'var(--green-text)' : 'var(--orange-text)',
+                }}>
+                  {licenseNo.replace(/\D/g, '').length}/12
+                </span>
+              )}
+            </label>
             <div style={{ display: 'flex', gap: 6 }}>
               <input
                 className="input"
-                placeholder="예: 11-12-345678-90"
+                placeholder="예: 11-12-345678-90 (숫자 12자리)"
                 value={licenseNo}
                 onChange={(e) => setLicenseNo(e.target.value)}
-                style={{ flex: 1 }}
+                style={{
+                  flex: 1,
+                  borderColor: licenseNo && licenseNo.replace(/\D/g, '').length !== 12 ? 'var(--orange-text)' : undefined,
+                }}
               />
               <label className="btn" style={{ cursor: licenseOcrBusy ? 'wait' : 'pointer', flex: '0 0 auto' }}>
                 <input

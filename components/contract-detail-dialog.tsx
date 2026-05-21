@@ -1033,13 +1033,97 @@ function DocumentsTab({ c, onUpdate }: { c: Contract; onUpdate: (u: Contract) =>
   const [docs, setDocs] = useState<UploadedDoc[]>([]);
   const [selectedKind, setSelectedKind] = useState<DocumentKind>('자동차등록증');
   const [busy, setBusy] = useState(false);
+  const [ocrError, setOcrError] = useState<string | null>(null);
 
-  function handleUpload(file: File) {
+  /** DocumentKind → OCR API type */
+  function ocrType(kind: DocumentKind): string | null {
+    if (kind === '자동차등록증') return 'vehicle_reg';
+    if (kind === '보험증권') return 'insurance_policy';
+    if (kind === '계약서') return 'rental_contract';
+    return null; // 할부스케줄/기타 — OCR 미지원
+  }
+
+  /** OCR raw → DocumentData 매핑 */
+  function mapOcrToDocData(kind: DocumentKind, raw: Record<string, unknown>): DocumentData {
+    const s = (k: string) => (raw[k] != null ? String(raw[k]) : undefined);
+    const n = (k: string) => (raw[k] != null && !Number.isNaN(Number(raw[k])) ? Number(raw[k]) : undefined);
+
+    if (kind === '자동차등록증') {
+      return {
+        vehiclePlate: s('car_number'),
+        vehicleModel: s('car_name'),
+        vehicleVin: s('vin'),
+        vehicleYear: s('car_year_month')?.slice(0, 4),
+        vehicleOwner: s('owner_name'),
+        vehicleOwnerRegNo: s('owner_biz_no'),
+      };
+    }
+    if (kind === '보험증권') {
+      return {
+        insurer: s('insurer'),
+        insuredName: s('insured'),
+        insuranceStart: s('start_date'),
+        insuranceEnd: s('end_date'),
+        insuranceAge: n('driver_age') ?? (s('driver_age')?.match(/(\d+)/)?.[1] ? Number(s('driver_age')!.match(/(\d+)/)![1]) : undefined),
+        insuranceDriverScope: s('driver_scope'),
+      };
+    }
+    if (kind === '계약서') {
+      return {
+        vehiclePlate: s('car_number'),
+        vehicleModel: s('car_name'),
+      };
+    }
+    return {};
+  }
+
+  /** OCR 결과 → Contract 필드 자동 반영 (사용자 확인 없이 채움). 비어있는 필드만 채움. */
+  function applyOcrToContract(kind: DocumentKind, data: DocumentData): void {
+    const patch: Partial<Contract> = {};
+    if (kind === '자동차등록증') {
+      // 검사만기 — vehicle_reg OCR 의 inspection_to → Contract.inspectionDueDate (없으면)
+      // raw 에 inspection_to 가 있지만 DocumentData 에는 안 매핑됨. 직접 raw 에서 가져와야 함.
+      // 이건 handleUpload 내에서 raw 통째로 다루므로 거기서 처리.
+    }
+    if (kind === '보험증권' && data.insuranceEnd && !c.insuranceExpiryDate) {
+      patch.insuranceExpiryDate = data.insuranceEnd;
+    }
+    if (Object.keys(patch).length > 0) {
+      onUpdate({ ...c, ...patch });
+    }
+  }
+
+  async function handleUpload(file: File) {
+    const type = ocrType(selectedKind);
     setBusy(true);
-    // mock OCR — 1.2초 후 추출 데이터 반환
-    setTimeout(() => {
-      const kindSpec = DOC_KINDS.find((k) => k.value === selectedKind);
-      const data = kindSpec ? kindSpec.mockData(c) : {};
+    setOcrError(null);
+    try {
+      let data: DocumentData = {};
+      let raw: Record<string, unknown> = {};
+
+      if (type) {
+        // 실 Gemini OCR 호출
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('type', type);
+        const { getFirebaseAuth } = await import('@/lib/firebase/client');
+        const auth = getFirebaseAuth();
+        const user = auth?.currentUser;
+        const idToken = user ? await user.getIdToken() : '';
+        const res = await fetch('/api/ocr/extract', {
+          method: 'POST',
+          headers: idToken ? { Authorization: `Bearer ${idToken}` } : undefined,
+          body: fd,
+        });
+        const json = await res.json();
+        if (!json.ok) throw new Error(json.error || 'OCR 실패');
+        raw = json.extracted as Record<string, unknown>;
+        data = mapOcrToDocData(selectedKind, raw);
+      } else {
+        // OCR 미지원 종류 (할부스케줄 등) — 빈 데이터로 등록만
+        data = {};
+      }
+
       const issues = validateDocument(data, c, selectedKind);
       const doc: UploadedDoc = {
         id: `doc-${Date.now()}`,
@@ -1050,8 +1134,23 @@ function DocumentsTab({ c, onUpdate }: { c: Contract; onUpdate: (u: Contract) =>
         issues,
       };
       setDocs((prev) => [doc, ...prev]);
+
+      // Contract 자동 반영 — 보험만기 / 검사만기 / 자동차세 등
+      const patch: Partial<Contract> = {};
+      if (selectedKind === '보험증권' && data.insuranceEnd && !c.insuranceExpiryDate) {
+        patch.insuranceExpiryDate = data.insuranceEnd;
+      }
+      if (selectedKind === '자동차등록증' && raw.inspection_to && !c.inspectionDueDate) {
+        patch.inspectionDueDate = String(raw.inspection_to);
+      }
+      if (Object.keys(patch).length > 0) {
+        onUpdate({ ...c, ...patch });
+      }
+    } catch (e) {
+      setOcrError((e as Error).message ?? String(e));
+    } finally {
       setBusy(false);
-    }, 1200);
+    }
   }
 
   function removeDoc(id: string) {
@@ -1281,13 +1380,26 @@ function LicenseVerifySection({ c, onUpdate }: { c: Contract; onUpdate: (u: Cont
     <Section icon={<User size={12} weight="duotone" />} title="면허검증 — 한국교통안전공단 RIMS">
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr 130px auto auto', gap: 8, alignItems: 'center' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-weak)' }}>면허번호</div>
+          <div style={{ fontSize: 11, color: 'var(--text-weak)' }}>
+            면허번호
+            {licenseNo && (
+              <span style={{
+                marginLeft: 6, fontSize: 10,
+                color: licenseNo.replace(/\D/g, '').length === 12 ? 'var(--green-text)' : 'var(--orange-text)',
+              }}>
+                {licenseNo.replace(/\D/g, '').length}/12
+              </span>
+            )}
+          </div>
           <input
             className="input"
-            placeholder="예: 11-12-345678-90 (12자리)"
+            placeholder="예: 11-12-345678-90 (숫자 12자리)"
             value={licenseNo}
             onChange={(e) => setLicenseNo(e.target.value)}
             disabled={busy}
+            style={{
+              borderColor: licenseNo && licenseNo.replace(/\D/g, '').length !== 12 ? 'var(--orange-text)' : undefined,
+            }}
           />
           <select
             className="input"
