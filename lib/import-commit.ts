@@ -203,6 +203,8 @@ export type SnapshotPatch = {
   termMonths: number;
   deposit: number;
   monthlyRent: number;
+  paymentDay: number;
+  paymentMethod: string;
   insuranceAge?: number;
   currentSeq: number;
   unpaidAmount: number;
@@ -343,6 +345,11 @@ export function parseSnapshotRow(row: Row, companies?: Company[]): SnapshotPatch
   const period = parseContractPeriod(row);
   const deposit = toNum(get(row, '보증금', 'deposit'));
   const insuranceAge = toNum(get(row, '보험연령', 'insuranceAge')) || undefined;
+  const paymentDayRaw = toNum(get(row, '결제일', '납기일', 'paymentDay'));
+  const paymentDay = (paymentDayRaw >= 1 && paymentDayRaw <= 31)
+    ? Math.floor(paymentDayRaw)
+    : (period.start ? parseInt(period.start.slice(8, 10), 10) || 1 : 1);
+  const paymentMethod = toStr(get(row, '결제방법', '결제수단', 'paymentMethod')) || '이체';
 
   // 계약회차는 자동 계산 (계약시작일 ~ 오늘)
   const currentSeq = computeCurrentSeq(period.start, period.months);
@@ -362,6 +369,8 @@ export function parseSnapshotRow(row: Row, companies?: Company[]): SnapshotPatch
     termMonths: period.months,
     deposit,
     monthlyRent,
+    paymentDay,
+    paymentMethod,
     insuranceAge,
     currentSeq,
     unpaidAmount,
@@ -375,7 +384,8 @@ export function applySnapshotToContract(
   patch: SnapshotPatch,
 ): Contract | Omit<Contract, 'id'> {
   const today = todayKr();
-  const paymentDay = existing?.paymentDay ?? 1;
+  // 우선순위: patch.paymentDay (엑셀의 결제일 컬럼) > 기존 계약의 paymentDay > 1
+  const paymentDay = patch.paymentDay || existing?.paymentDay || 1;
 
   // 회차 N개 생성 + 미수 자동 분배 (직전 회차부터 역순)
   const baseSchedules = generateSchedules({
@@ -429,7 +439,7 @@ export function applySnapshotToContract(
     deposit: patch.deposit,
     insuranceAge: patch.insuranceAge,
     paymentDay,
-    paymentMethod: '이체',
+    paymentMethod: patch.paymentMethod || '이체',
     status: '운행',
     currentSeq: currentSeqFromSched,
     totalSeq: Math.max(currentSeqFromSched, patch.termMonths),

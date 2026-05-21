@@ -1077,6 +1077,8 @@ function SnapshotPane({
   result: string | null;
 }) {
   const { companies } = useCompanies();
+  const { contracts } = useContracts();
+  const { vehicles } = useVehicles();
   const [sheets, setSheets] = useState<ParsedSheet[]>([]);
   const [drag, setDrag] = useState(false);
   // 행별 체크 선택 (기본: valid 행만 체크) — Map<rowKey, boolean>
@@ -1096,34 +1098,83 @@ function SnapshotPane({
     setSheets((prev) => [...prev, ...out]);
   }, []);
 
-  // 모든 행 검증 결과 (sheet idx + row idx 키)
-  const validated = useMemo(() => {
-    return sheets.flatMap((s, sIdx) =>
-      s.rows.map((r, rIdx) => ({
-        key: `${sIdx}-${rIdx}`,
-        sheetName: s.sheetName,
-        fileName: s.fileName,
-        row: r,
-        ...validateSnapshotRow(r, companies),
-      })),
-    );
-  }, [sheets, companies]);
+  // 기존 DB 색인 — 중복 판정용 (호출 시점 계약/차량과 비교)
+  const existingPlates = useMemo(() => {
+    const m = new Map<string, 'contract' | 'vehicle'>();
+    for (const c of contracts) {
+      if (c.vehiclePlate) m.set(c.vehiclePlate.trim(), 'contract');
+    }
+    for (const v of vehicles) {
+      if (v.plate && !m.has(v.plate.trim())) m.set(v.plate.trim(), 'vehicle');
+    }
+    return m;
+  }, [contracts, vehicles]);
 
-  // sheets 바뀔 때 — valid 만 기본 체크
+  // 모든 행 검증 결과 (sheet idx + row idx 키) + dup 정보
+  const validated = useMemo(() => {
+    // 같은 업로드 안에서 plate 중복도 체크
+    const inSheetPlates = new Map<string, number>();  // plate → 처음 등장 row idx
+    return sheets.flatMap((s, sIdx) =>
+      s.rows.map((r, rIdx) => {
+        const v = validateSnapshotRow(r, companies);
+        const plate = v.raw.plate.trim();
+        // 같은 시트 내 중복?
+        let inSheetDup = false;
+        if (plate) {
+          const firstIdx = inSheetPlates.get(plate);
+          if (firstIdx === undefined) inSheetPlates.set(plate, rIdx);
+          else inSheetDup = true;
+        }
+        // DB 와 비교
+        const dbHit = plate ? existingPlates.get(plate) : undefined;
+        return {
+          key: `${sIdx}-${rIdx}`,
+          sheetName: s.sheetName,
+          fileName: s.fileName,
+          row: r,
+          inSheetDup,
+          dbHit,  // undefined / 'contract' / 'vehicle'
+          ...v,
+        };
+      }),
+    );
+  }, [sheets, companies, existingPlates]);
+
+  // sheets 바뀔 때 — 기본 체크 규칙:
+  //  · 계약 신규/갱신 → ON
+  //  · 휴차 신규 → ON
+  //  · 휴차 중복 (이미 있음) → OFF
+  //  · 시트 내 중복 → OFF
+  //  · 오류 → OFF
   useEffect(() => {
     if (validated.length === 0) return;
     setPicks((prev) => {
       const next = { ...prev };
       for (const v of validated) {
-        if (next[v.key] === undefined) next[v.key] = v.valid;
+        if (next[v.key] !== undefined) continue;
+        if (v.kind === 'invalid' || v.inSheetDup) { next[v.key] = false; continue; }
+        if (v.kind === 'vehicle-only' && v.dbHit) { next[v.key] = false; continue; }
+        next[v.key] = true;
       }
       return next;
     });
   }, [validated]);
 
-  const contractCount = validated.filter((v) => v.kind === 'contract').length;
-  const vehicleOnlyCount = validated.filter((v) => v.kind === 'vehicle-only').length;
-  const invalidCount = validated.filter((v) => v.kind === 'invalid').length;
+  // 행별 최종 상태 (UI 라벨 + commit 동작)
+  function rowState(v: typeof validated[number]): 'contract-new' | 'contract-update' | 'vehicle-new' | 'vehicle-dup' | 'sheet-dup' | 'invalid' {
+    if (v.kind === 'invalid') return 'invalid';
+    if (v.inSheetDup) return 'sheet-dup';
+    if (v.kind === 'contract') return v.dbHit === 'contract' ? 'contract-update' : 'contract-new';
+    // vehicle-only
+    return v.dbHit ? 'vehicle-dup' : 'vehicle-new';
+  }
+  const states = validated.map((v) => rowState(v));
+  const contractNewCount = states.filter((s) => s === 'contract-new').length;
+  const contractUpdateCount = states.filter((s) => s === 'contract-update').length;
+  const vehicleNewCount = states.filter((s) => s === 'vehicle-new').length;
+  const vehicleDupCount = states.filter((s) => s === 'vehicle-dup').length;
+  const sheetDupCount = states.filter((s) => s === 'sheet-dup').length;
+  const invalidCount = states.filter((s) => s === 'invalid').length;
   const pickedCount = validated.filter((v) => picks[v.key]).length;
 
   const togglePick = (key: string) => setPicks((p) => ({ ...p, [key]: !p[key] }));
@@ -1177,11 +1228,14 @@ function SnapshotPane({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {/* 요약 + 파일 추가 + 새로 올리기 */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'var(--bg-card)', border: '1px solid var(--border)', flexWrap: 'wrap' }}>
         <FileArrowUp size={14} weight="duotone" style={{ color: 'var(--text-sub)' }} />
         <span style={{ fontSize: 12 }}>{sheets.length}개 시트 · 전체 {totalRows}행</span>
-        {contractCount > 0 && <span style={{ fontSize: 11, color: 'var(--green-text)' }}>계약 {contractCount}</span>}
-        {vehicleOnlyCount > 0 && <span style={{ fontSize: 11, color: 'var(--orange-text)' }}>휴차 {vehicleOnlyCount}</span>}
+        {contractNewCount > 0 && <span style={{ fontSize: 11, color: 'var(--green-text)' }}>계약 신규 {contractNewCount}</span>}
+        {contractUpdateCount > 0 && <span style={{ fontSize: 11, color: 'var(--brand)' }}>계약 갱신 {contractUpdateCount}</span>}
+        {vehicleNewCount > 0 && <span style={{ fontSize: 11, color: 'var(--orange-text)' }}>휴차 신규 {vehicleNewCount}</span>}
+        {vehicleDupCount > 0 && <span style={{ fontSize: 11, color: 'var(--text-weak)' }}>휴차 중복 {vehicleDupCount}</span>}
+        {sheetDupCount > 0 && <span style={{ fontSize: 11, color: 'var(--text-weak)' }}>시트내 중복 {sheetDupCount}</span>}
         {invalidCount > 0 && <span style={{ fontSize: 11, color: 'var(--red-text)' }}>오류 {invalidCount}</span>}
         <div style={{ flex: 1 }} />
         <button className="btn btn-sm" type="button" onClick={() => document.getElementById(inputId)?.click()}>
@@ -1236,9 +1290,15 @@ function SnapshotPane({
                 </td>
                 <td className="center mono dim">{i + 1}</td>
                 <td className="center">
-                  {v.kind === 'contract' && <span className="status 완료">계약</span>}
-                  {v.kind === 'vehicle-only' && <span className="status 예정">휴차</span>}
-                  {v.kind === 'invalid' && <span className="status 미납">오류</span>}
+                  {(() => {
+                    const s = states[i];
+                    if (s === 'contract-new') return <span className="status 완료">계약 신규</span>;
+                    if (s === 'contract-update') return <span className="status 예정" style={{ background: 'var(--brand-bg)', color: 'var(--brand)' }}>계약 갱신</span>;
+                    if (s === 'vehicle-new') return <span className="status 예정">휴차 신규</span>;
+                    if (s === 'vehicle-dup') return <span className="status" style={{ background: 'var(--bg-sunken)', color: 'var(--text-weak)' }}>휴차 중복</span>;
+                    if (s === 'sheet-dup') return <span className="status" style={{ background: 'var(--bg-sunken)', color: 'var(--text-weak)' }}>시트내 중복</span>;
+                    return <span className="status 미납">오류</span>;
+                  })()}
                 </td>
                 <td className="mono">{v.raw.plate || '-'}</td>
                 <td>{v.raw.customer || (v.kind === 'vehicle-only' ? <span className="dim">(미정)</span> : '-')}</td>
@@ -1250,8 +1310,8 @@ function SnapshotPane({
                 <td className="num mono" style={{ color: v.raw.unpaid > 0 ? 'var(--red-text)' : undefined }}>
                   {v.raw.unpaid > 0 ? `₩${formatCurrency(v.raw.unpaid)}` : '-'}
                 </td>
-                <td style={{ fontSize: 10, color: v.kind === 'invalid' ? 'var(--red-text)' : v.kind === 'vehicle-only' ? 'var(--orange-text)' : 'var(--text-weak)' }}>
-                  {v.errors.join(', ') || (v.patch?.unpaidSeqCount ? `미납 ${v.patch.unpaidSeqCount}회차 추정` : '')}
+                <td style={{ fontSize: 10, color: v.kind === 'invalid' ? 'var(--red-text)' : (states[i] === 'vehicle-dup' || states[i] === 'sheet-dup') ? 'var(--text-weak)' : v.kind === 'vehicle-only' ? 'var(--orange-text)' : 'var(--text-weak)' }}>
+                  {v.errors.join(', ') || (v.inSheetDup ? '시트 안 같은 차량번호 중복' : v.dbHit === 'vehicle' ? '이미 차량 등록됨 (skip)' : v.dbHit === 'contract' && v.kind === 'contract' ? '기존 계약 갱신' : v.patch?.unpaidSeqCount ? `미납 ${v.patch.unpaidSeqCount}회차 추정` : '')}
                 </td>
               </tr>
             ))}

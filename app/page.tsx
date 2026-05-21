@@ -22,6 +22,8 @@ import { ExtendPopover } from '@/components/extend-popover';
 import { SmsDialog } from '@/components/sms-dialog';
 import { PaymentLedgerDialog } from '@/components/payment-ledger-dialog';
 import { ContextMenu, type ContextMenuItem } from '@/components/ui/context-menu';
+import { useAuth } from '@/lib/use-auth';
+import { isSuperAdmin } from '@/lib/admin-emails';
 
 type View = '전체' | '계약중' | '휴차' | '미수';
 const VIEWS: View[] = ['전체', '계약중', '휴차', '미수'];
@@ -200,7 +202,9 @@ export default function Page() {
   });
 
   // Firebase RTDB 실시간 구독 — /icar001/contracts
-  const { contracts, loading: contractsLoading, update: rtdbUpdate, remove: rtdbRemove } = useContracts();
+  const { contracts, loading: contractsLoading, update: rtdbUpdate, updateMany: rtdbUpdateMany, remove: rtdbRemove } = useContracts();
+  const { user } = useAuth();
+  const superAdmin = isSuperAdmin(user?.email);
   const { companies: companyMaster } = useCompanies();
 
   // selectedId를 기준으로 fresh contract 참조 (업데이트 시 자동 반영)
@@ -242,6 +246,42 @@ export default function Page() {
   function ctxAction_delete(c: Contract) {
     if (!confirm(`정말 ${c.contractNo} ${c.vehiclePlate} ${c.customerName} 계약을 삭제하시겠습니까?\n(돌이킬 수 없음)`)) return;
     void rtdbRemove(c.id);
+  }
+
+  // 선택된 계약 일괄 삭제 — SUPER_ADMIN 만
+  async function handleBulkDelete() {
+    if (selectedIds.size === 0) return;
+    const list = Array.from(selectedIds).map((id) => contracts.find((c) => c.id === id)).filter(Boolean) as Contract[];
+    if (list.length === 0) return;
+    const preview = list.slice(0, 5).map((c) => `· ${c.vehiclePlate} ${c.customerName}`).join('\n');
+    const more = list.length > 5 ? `\n... 외 ${list.length - 5}건` : '';
+    if (!confirm(`정말 ${list.length}건 계약을 삭제하시겠습니까?\n\n${preview}${more}\n\n(돌이킬 수 없음)`)) return;
+    if (!confirm(`한 번 더 확인 — 진짜 삭제할까요? (${list.length}건)`)) return;
+    for (const c of list) {
+      await rtdbRemove(c.id);
+    }
+    setSelectedIds(new Set());
+    alert(`${list.length}건 삭제 완료`);
+  }
+
+  // 선택된 계약 일괄 인도완료 (계약시작일=인도일) — SUPER_ADMIN 만
+  async function handleBulkMarkDelivered() {
+    if (selectedIds.size === 0) return;
+    const list = Array.from(selectedIds).map((id) => contracts.find((c) => c.id === id)).filter(Boolean) as Contract[];
+    const targets = list.filter((c) => !c.deliveredDate);
+    if (targets.length === 0) {
+      alert('선택 항목 모두 이미 인도 완료됨');
+      return;
+    }
+    if (!confirm(`${targets.length}건을 일괄 인도완료 처리하시겠습니까?\n(deliveredDate = 계약시작일, status = '운행')`)) return;
+    const updated = targets.map((c) => ({
+      ...c,
+      deliveredDate: c.contractDate,
+      status: '운행' as const,
+      vehicleStatus: '운행' as const,
+    }));
+    await rtdbUpdateMany(updated);
+    alert(`${targets.length}건 일괄 인도완료 처리`);
   }
 
   const toggleRow = useCallback((id: string) => {
@@ -700,6 +740,27 @@ export default function Page() {
             >
               <DownloadSimple size={14} /> 미수 엑셀
             </button>
+            {superAdmin && selectedIds.size > 0 && (
+              <>
+                <span style={{ width: 1, height: 14, background: 'var(--border)' }} />
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={handleBulkMarkDelivered}
+                  title="선택 계약 일괄 인도완료 (deliveredDate = 계약시작일)"
+                >
+                  <Truck size={14} /> 일괄 인도완료 ({selectedIds.size})
+                </button>
+                <button
+                  className="btn btn-danger"
+                  type="button"
+                  onClick={handleBulkDelete}
+                  title="선택 계약 일괄 삭제 (마스터관리자 전용)"
+                >
+                  <X size={14} /> 일괄 삭제 ({selectedIds.size})
+                </button>
+              </>
+            )}
           </>
         }
         right={

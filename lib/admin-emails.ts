@@ -1,13 +1,24 @@
 /**
- * 관리자 이메일 화이트리스트.
- * jpkerp-v4 와 동일 패턴 — Rules 는 인증만 체크, 권한 분리는 앱 코드.
+ * 권한 화이트리스트 — 2단계.
  *
- * 추가/제거 시 코드 수정 + 배포 필요. 향후 RTDB users/{uid}/role 로 확장 가능.
+ *  - SUPER_ADMIN : 데이터 삭제·일괄 수정 등 위험 권한 (오직 1명)
+ *  - ADMIN       : 감사 로그·관리 페이지 접근 (n명)
+ *
+ * jpkerp-v4 권한 정책 동일 — Rules 는 인증만, 권한 분리는 앱 코드에서.
  */
-export const ADMIN_EMAILS: ReadonlyArray<string> = [
-  'dudguq@gmail.com',
+export const SUPER_ADMIN_EMAILS: ReadonlyArray<string> = [
   'jpkpyh@gmail.com',
 ];
+
+export const ADMIN_EMAILS: ReadonlyArray<string> = [
+  ...SUPER_ADMIN_EMAILS,
+  'dudguq@gmail.com',
+];
+
+export function isSuperAdmin(email?: string | null): boolean {
+  if (!email) return false;
+  return SUPER_ADMIN_EMAILS.includes(email.toLowerCase().trim());
+}
 
 export function isAdmin(email?: string | null): boolean {
   if (!email) return false;

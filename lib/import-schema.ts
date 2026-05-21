@@ -73,9 +73,11 @@ export const SNAPSHOT_COLUMNS: ColumnSpec[] = [
   { label: '등록번호',   field: 'customerIdentNo', required: false, example: '900101-1234567', hint: '주민/사업자/법인 번호 — 자릿수로 자동 구분' },
   { label: '연락처',     field: 'customerPhone1',  required: false, example: '010-1234-5678' },
   { label: '계약시작일', field: 'contractDate',    required: true,  example: '2026-01-01',  hint: '2026-01-01 / 260101 / 26.1.1 / 엑셀 날짜 모두 OK' },
-  { label: '계약종료일', field: 'returnScheduledDate', required: true, example: '2026-12-31', hint: '2026-12-31 / 261231 / 26.12.31 / 엑셀 날짜 모두 OK' },
+  { label: '계약종료일', field: 'returnScheduledDate', required: true, example: '2026-12-31', hint: '2026-12-31 / 261231 / 26.12.31' },
+  { label: '결제일',     field: 'paymentDay',      required: false, example: '15',          hint: '매월 1~31일 결제일. 미입력 시 계약시작일의 일자 적용 — 미납일수 계산 기준' },
+  { label: '결제방법',   field: 'paymentMethod',   required: false, example: 'CMS',         hint: 'CMS / 카드 / 이체 / 현금 / 후불' },
   { label: '보증금',     field: 'deposit',         required: false, example: '2000000',     hint: '원 단위' },
-  { label: '월대여료',   field: 'monthlyRent',     required: true,  example: '1500000',     hint: '원 단위 (월 청구금액)' },
+  { label: '월대여료',   field: 'monthlyRent',     required: false, example: '1500000',     hint: '원 단위 (월 청구금액). 계약자 있을 땐 사실상 필수' },
   { label: '보험연령',   field: 'insuranceAge',    required: false, example: '26',          hint: '만 N세 — 자동차보험 운전자 연령제한' },
   { label: '현재미수',   field: 'unpaidAmount',    required: false, example: '1500000',     hint: '오늘 기준 미수 합계 (원). 0이면 정상' },
 ];
