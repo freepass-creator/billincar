@@ -161,13 +161,14 @@ export function CreateDialog({
       const contractValidations = validations.filter((v) => v.kind === 'contract' && v.patch);
       const vehicleOnly = validations.filter((v) => v.kind === 'vehicle-only' && v.vehiclePatch);
 
-      // 1) 계약 행 — contract UPSERT
+      // 1) 계약 행 — contract UPSERT (단, plate='미정'은 항상 신규)
       const byPlate = new Map(contracts.map((c) => [c.vehiclePlate.trim(), c]));
       const updates: Contract[] = [];
       const creates: Array<Omit<Contract, 'id'>> = [];
       for (const v of contractValidations) {
         const p = v.patch!;
-        const existing = byPlate.get(p.vehiclePlate.trim());
+        const plateKey = p.vehiclePlate.trim();
+        const existing = plateKey === '미정' ? undefined : byPlate.get(plateKey);
         const out = applySnapshotToContract(existing, p);
         if (existing && 'id' in out) updates.push(out as Contract);
         else creates.push(out as Omit<Contract, 'id'>);

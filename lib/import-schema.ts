@@ -65,16 +65,16 @@ export const CONTRACT_COLUMNS: ColumnSpec[] = [
  * 업로드 후 수납 엑셀 매칭은 정상 동작 — 미수금이 차감됨.
  */
 export const SNAPSHOT_COLUMNS: ColumnSpec[] = [
-  { label: '법인등록번호', field: 'corpRegNo',     required: true,  example: '110111-1234567', hint: '회사 마스터의 법인등록번호로 자동 매칭 → 회사명 결정. 미등록은 입력값 그대로.' },
-  { label: '차량번호',   field: 'vehiclePlate',    required: true,  example: '109호1234',  hint: 'UPSERT 키 — 동일 번호 있으면 갱신' },
-  { label: '차명',       field: 'vehicleModel',    required: true,  example: 'K5' },
-  { label: '계약자',     field: 'customerName',    required: true,  example: '홍길동' },
+  { label: '법인등록번호', field: 'corpRegNo',     required: true,  example: '110111-1234567', hint: '회사 마스터의 법인등록번호로 자동 매칭 → 회사명 결정 ((주)/주식회사 자동 제거). 미등록은 입력값 그대로.' },
+  { label: '차량번호',   field: 'vehiclePlate',    required: false, example: '109호1234',  hint: 'UPSERT 키 — 동일 번호 있으면 갱신. 비어있고 계약자만 있으면 구매대기 계약으로 신규 등록' },
+  { label: '차명',       field: 'vehicleModel',    required: false, example: 'K5' },
+  { label: '계약자',     field: 'customerName',    required: false, example: '홍길동', hint: '비어있고 차량번호만 있으면 휴차 차량으로 등록' },
   { label: '구분',       field: 'customerKind',    required: false, example: '개인', hint: '개인/사업자/법인 — 미입력 시 자동 추정' },
   { label: '등록번호',   field: 'customerIdentNo', required: false, example: '900101-1234567', hint: '주민/사업자/법인 번호 — 자릿수로 자동 구분' },
   { label: '연락처',     field: 'customerPhone1',  required: false, example: '010-1234-5678' },
   { label: '계약시작일', field: 'contractDate',    required: true,  example: '2026-01-01',  hint: '2026-01-01 / 260101 / 26.1.1 / 엑셀 날짜 모두 OK' },
   { label: '계약종료일', field: 'returnScheduledDate', required: true, example: '2026-12-31', hint: '2026-12-31 / 261231 / 26.12.31' },
-  { label: '차량상태',   field: 'vehicleStatus',   required: false, example: '운행',         hint: '구매대기 / 등록대기 / 상품화대기 / 상품화중 / 상품대기 / 운행 / 휴차대기 / 매각대기 / 매각 / 휴차 / 정비 / 사고 / 반납. 미입력 시 계약 있으면 운행, 없으면 휴차' },
+  { label: '차량상태',   field: 'vehicleStatus',   required: false, example: '상품대기',     hint: '계약자 없는 행(휴차 차량)에만 적용됨 — 구매대기/등록대기/상품화대기/상품화중/상품대기/휴차대기/매각대기/매각/정비/사고/반납. 계약자 있으면 자동 운행' },
   { label: '결제일',     field: 'paymentDay',      required: false, example: '15',          hint: '매월 1~31일 결제일. 미입력 시 계약시작일의 일자 적용 — 미납일수 계산 기준' },
   { label: '결제방법',   field: 'paymentMethod',   required: false, example: 'CMS',         hint: 'CMS / 카드 / 이체 / 현금 / 후불' },
   { label: '보증금',     field: 'deposit',         required: false, example: '2000000',     hint: '원 단위' },

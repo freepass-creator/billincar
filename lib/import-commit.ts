@@ -256,8 +256,19 @@ function normalizeRegNo(s: string): string {
   return s.replace(/[-\s]/g, '');
 }
 
+/** 회사명에서 법인 표기 제거 — "(주) 회사명" / "주식회사 회사명" / "회사명(주)" / "회사명 주식회사" → "회사명" */
+function stripCorpPrefix(name: string): string {
+  if (!name) return name;
+  return name
+    .replace(/\(주\)/g, ' ')
+    .replace(/주식회사/g, ' ')
+    .replace(/유한회사/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /**
- * 법인등록번호 → 회사명 매핑. 회사 마스터의 법인번호와 매칭되면 회사명 반환,
+ * 법인등록번호 → 회사명 매핑. 회사 마스터의 법인번호와 매칭되면 회사명 반환 ((주)/주식회사 제거),
  * 미등록이면 입력값 그대로 반환 (CompanyDialog의 "미등록 법인" 섹션에 자동 노출됨).
  * fallback: 사업자번호 → 회사명 (구버전 호환).
  */
@@ -267,10 +278,10 @@ function resolveCompanyByRegNo(regNoOrName: string, companies?: Company[]): stri
   if (companies && companies.length > 0) {
     // 1순위: 법인등록번호
     const byCorp = companies.find((c) => c.corpRegNo && normalizeRegNo(c.corpRegNo) === norm);
-    if (byCorp) return byCorp.name;
+    if (byCorp) return stripCorpPrefix(byCorp.name);
     // 2순위: 사업자등록번호 (legacy 호환)
     const byBiz = companies.find((c) => c.bizRegNo && normalizeRegNo(c.bizRegNo) === norm);
-    if (byBiz) return byBiz.name;
+    if (byBiz) return stripCorpPrefix(byBiz.name);
   }
   return regNoOrName;  // 미등록 — 사용자가 입력한 값 그대로
 }
@@ -303,10 +314,27 @@ export function validateSnapshotRow(row: Row, companies?: Company[]): SnapshotVa
   const unpaidAmount = toNum(get(row, '현재미수', '미수금', 'unpaidAmount'));
   const raw = { plate, customer: customerName, monthlyRent, unpaid: unpaidAmount };
 
-  // 차량번호 자체가 없으면 행 무시
-  if (!plate) {
-    errors.push('차량번호 누락');
+  // 차량번호도, 계약자도 없으면 진짜 빈 행 → 무시
+  if (!plate && !customerName) {
+    errors.push('차량번호·계약자 모두 누락');
     return { kind: 'invalid', valid: false, errors, raw };
+  }
+
+  // 차량번호 없고 계약자만 있음 → 차량 미정 계약 (구매대기)
+  if (!plate && customerName) {
+    if (monthlyRent <= 0) {
+      errors.push('월대여료 누락 → 차량없는 계약 등록 불가');
+      return { kind: 'invalid', valid: false, errors, raw };
+    }
+    const patch = parseSnapshotRow({ ...row, 차량번호: '미정' }, companies);
+    if (!patch) {
+      errors.push('파싱 실패');
+      return { kind: 'invalid', valid: false, errors, raw };
+    }
+    patch.vehiclePlate = '미정';
+    patch.vehicleStatus = '구매대기';
+    errors.push('차량 미정 → 구매대기');
+    return { kind: 'contract', valid: true, patch, errors, raw };
   }
 
   // 계약자 없거나 월대여료 0 → 휴차 차량 (vehicle-only)
@@ -353,8 +381,8 @@ export function parseSnapshotRow(row: Row, companies?: Company[]): SnapshotPatch
     ? Math.floor(paymentDayRaw)
     : (period.start ? parseInt(period.start.slice(8, 10), 10) || 1 : 1);
   const paymentMethod = toStr(get(row, '결제방법', '결제수단', 'paymentMethod')) || '이체';
-  const vehicleStatusRaw = toStr(get(row, '차량상태', '상태', 'vehicleStatus'));
-  const vehicleStatus = pickVehicleStatus(vehicleStatusRaw, true);  // 계약 행이므로 default 운행
+  // 손님 있는 계약 행은 차량상태 컬럼 무시 — 항상 '운행'
+  const vehicleStatus: VehicleStatus = '운행';
 
   // 계약회차는 자동 계산 (계약시작일 ~ 오늘)
   const currentSeq = computeCurrentSeq(period.start, period.months);
