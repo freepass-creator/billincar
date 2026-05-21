@@ -1111,7 +1111,7 @@ function ContractRegisterPane({
         </button>
       </div>
 
-      {mode === 'manual' && <ContractManualForm onSubmit={() => { alert('mock: 계약 등록 완료'); onClose(); }} />}
+      {mode === 'manual' && <ContractManualForm onSubmit={onClose} />}
       {mode === 'ocr' && <ContractOcrPane onSubmit={() => { alert('mock: OCR 계약 등록 완료'); onClose(); }} />}
       {mode === 'excel' && (
         <UploadPane
@@ -1129,6 +1129,7 @@ function ContractRegisterPane({
 
 function ContractManualForm({ onSubmit }: { onSubmit: () => void }) {
   const companyNames = useCompanyNames();
+  const { add: addContract } = useContracts();
   const [company, setCompany] = useState(companyNames[0] ?? '');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone1, setCustomerPhone1] = useState('');
@@ -1149,8 +1150,69 @@ function ContractManualForm({ onSubmit }: { onSubmit: () => void }) {
   const [licenseNo, setLicenseNo] = useState('');
   const [licenseType, setLicenseType] = useState('1종 보통');
   const [licenseOcrBusy, setLicenseOcrBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const valid = customerName && customerPhone1 && contractDate && monthlyRent;
+
+  async function handleSave() {
+    if (!valid || saving) return;
+    setSaving(true);
+    try {
+      const monthly = parseInt(monthlyRent.replace(/[^0-9]/g, ''), 10) || 0;
+      const depositN = deposit ? parseInt(deposit.replace(/[^0-9]/g, ''), 10) || 0 : 0;
+      const payDay = Math.max(1, Math.min(31, parseInt(paymentDay, 10) || 1));
+
+      // termMonths 자동 계산 (반납예정 - 계약일, 월 단위)
+      let termMonths = 12;
+      if (returnDate && contractDate) {
+        const start = new Date(contractDate);
+        const end = new Date(returnDate);
+        termMonths = Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 30)));
+      }
+
+      const identDigits = (regNo || '').replace(/\D/g, '');
+      const { genCode } = await import('@/lib/code');
+      const yy = contractDate.slice(2, 4);
+      const mm = contractDate.slice(5, 7);
+      const contractNo = `ICR-${yy}${mm}-${genCode(4)}`;
+
+      // Phosphor types CompanyCode 가 alias 라 그대로 사용
+      await addContract({
+        contractNo,
+        company: (company || '기타') as import('@/lib/types').CompanyCode,
+        customerName: customerName.trim(),
+        customerKind,
+        customerIdentNo: identDigits || undefined,
+        customerPhone1: customerPhone1.trim(),
+        driverName: customerKind === '법인' ? driverName.trim() || undefined : undefined,
+        customerLicenseNo: licenseNo.trim() || undefined,
+        customerLicenseType: licenseType,
+        vehiclePlate: plate.trim() || '미정',
+        vehicleModel: model.trim() || '미정',
+        vehicleStatus: '구매대기',
+        contractDate,
+        returnScheduledDate: returnDate || undefined,
+        termMonths,
+        longTerm: termMonths >= 12,
+        monthlyRent: monthly,
+        deposit: depositN,
+        paymentDay: payDay,
+        paymentMethod,
+        manager: manager.trim() || undefined,
+        notes: notes.trim() || undefined,
+        status: '대기',
+        currentSeq: 1,
+        totalSeq: termMonths,
+        unpaidAmount: 0,
+        unpaidSeqCount: 0,
+      });
+      onSubmit();
+    } catch (e) {
+      alert('계약 등록 실패: ' + ((e as Error).message ?? String(e)));
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function handleLicenseOcr(file: File) {
     setLicenseOcrBusy(true);
@@ -1192,7 +1254,7 @@ function ContractManualForm({ onSubmit }: { onSubmit: () => void }) {
 
   return (
     <form
-      onSubmit={(e) => { e.preventDefault(); onSubmit(); }}
+      onSubmit={(e) => { e.preventDefault(); void handleSave(); }}
       style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: 1, overflow: 'auto' }}
     >
       <div className="detail-section">
@@ -1342,8 +1404,9 @@ function ContractManualForm({ onSubmit }: { onSubmit: () => void }) {
       </div>
 
       <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'flex-end', gap: 8, position: 'sticky', bottom: 0, background: 'var(--bg-card)', paddingTop: 8 }}>
-        <button type="submit" className="btn btn-primary" disabled={!valid}>
-          <CheckCircle size={14} /> 계약 등록
+        <button type="submit" className="btn btn-primary" disabled={!valid || saving}>
+          {saving ? <CircleNotch size={14} weight="bold" style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle size={14} />}
+          {saving ? '저장 중...' : '계약 등록'}
         </button>
       </div>
     </form>
