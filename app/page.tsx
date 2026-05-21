@@ -557,9 +557,11 @@ export default function Page() {
                           {c.currentSeq && c.totalSeq ? `${c.currentSeq}/${c.totalSeq}` : <span className="muted">-</span>}
                         </td>
                         <td className={`center mono ${isReturnOverdue ? 'danger' : 'dim'}`}>
-                          {c.returnScheduledDate
-                            ? formatRemainingHuman(todayKr(), c.returnScheduledDate)
-                            : <span className="muted">-</span>}
+                          {!c.returnScheduledDate
+                            ? <span className="muted">-</span>
+                            : (c.contractDate && c.returnScheduledDate < c.contractDate)
+                            ? <span style={{ color: 'var(--red-text)', fontWeight: 600 }} title={`종료(${c.returnScheduledDate}) < 시작(${c.contractDate})`}>날짜오류</span>
+                            : formatRemainingHuman(todayKr(), c.returnScheduledDate)}
                         </td>
                         {/* 수납상태 + 미수금 */}
                         <td className="center">
