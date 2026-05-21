@@ -11,8 +11,9 @@ import { useContracts } from '@/lib/firebase/contracts-store';
 import { useVehicles } from '@/lib/firebase/vehicles-store';
 import { useBankTx, useCardTx } from '@/lib/firebase/transactions-store';
 import { usePenalties } from '@/lib/firebase/penalty-store';
-import { formatCurrency, dateWithDow } from '@/lib/utils';
+import { formatCurrency, dateWithDow, formatDate } from '@/lib/utils';
 import { todayKr } from '@/lib/mock-data';
+import { buildAllAlerts, alertColor, dDayLabel, type AlertItem } from '@/lib/alerts';
 
 export default function DashboardPage() {
   const [createOpen, setCreateOpen] = useState(false);
@@ -65,6 +66,9 @@ export default function DashboardPage() {
           <KpiCard icon={<Warning weight="duotone" />} label="과태료 미처리" value={kpi.penaltyOpen} unit="건" tone={kpi.penaltyOpen > 0 ? 'orange' : 'green'} />
           <KpiCard icon={<CurrencyKrw weight="duotone" />} label="입금 트랜잭션" value={kpi.bankTxCount + kpi.cardTxCount} unit="건" tone="brand" sub={`계좌 ${kpi.bankTxCount} · 카드 ${kpi.cardTxCount}`} />
           <KpiCard icon={<CurrencyKrw weight="duotone" />} label="보증금 합계" value={formatCurrency(kpi.totalDeposit)} unit="원" tone="zinc" />
+
+          {/* D-Day 임박 알림 */}
+          <AlertsPanel contracts={contracts} />
 
           {/* 향후 차트 자리 */}
           <div className="panel" style={{ gridColumn: 'span 4', minHeight: 200, padding: 20, alignItems: 'center', justifyContent: 'center', textAlign: 'center', color: 'var(--text-weak)' }}>
@@ -133,6 +137,74 @@ function KpiCard({
         {unit && <span style={{ fontSize: 12, color: 'var(--text-weak)' }}>{unit}</span>}
       </div>
       {sub && <div style={{ fontSize: 10, color: 'var(--text-weak)' }}>{sub}</div>}
+    </div>
+  );
+}
+
+/* ─────────────────── D-Day 임박 알림 패널 ─────────────────── */
+
+const KIND_BADGE: Record<AlertItem['kind'], string> = {
+  '정기검사': '검사',
+  '보험만기': '보험',
+  '자동차세': '자동차세',
+  '면허만기': '면허',
+  '반납임박': '반납',
+};
+
+function AlertsPanel({ contracts }: { contracts: import('@/lib/types').Contract[] }) {
+  const alerts = useMemo(() => buildAllAlerts(contracts), [contracts]);
+  const overdue = alerts.filter((a) => a.severity === 'overdue').length;
+  const urgent = alerts.filter((a) => a.severity === 'urgent').length;
+  const soon = alerts.filter((a) => a.severity === 'soon').length;
+
+  return (
+    <div className="panel" style={{ gridColumn: 'span 4', display: 'flex', flexDirection: 'column' }}>
+      <div className="detail-section-header" style={{ background: 'var(--bg-card)' }}>
+        <Warning size={12} weight="duotone" />
+        <span className="title">D-Day 임박 알림 — D-30 이내</span>
+        <span style={{ fontSize: 11, color: 'var(--text-weak)' }}>
+          {overdue > 0 && <span style={{ color: 'var(--red-text)', marginRight: 8 }}><strong>경과 {overdue}</strong></span>}
+          {urgent > 0 && <span style={{ color: 'var(--red-text)', marginRight: 8 }}>긴급 {urgent}</span>}
+          {soon > 0 && <span style={{ color: 'var(--orange-text)' }}>임박 {soon}</span>}
+          {alerts.length === 0 && <span style={{ color: 'var(--green-text)' }}>임박 항목 없음 ✓</span>}
+        </span>
+      </div>
+      {alerts.length === 0 ? (
+        <div style={{ padding: 24, fontSize: 12, color: 'var(--text-weak)', textAlign: 'center' }}>
+          현재 D-30 이내 임박 항목이 없습니다.
+        </div>
+      ) : (
+        <div style={{ maxHeight: 360, overflow: 'auto' }}>
+          <table className="table">
+            <thead>
+              <tr>
+                <th className="center" style={{ width: 70 }}>D-Day</th>
+                <th className="center" style={{ width: 64 }}>구분</th>
+                <th style={{ width: 110 }}>예정일</th>
+                <th style={{ width: 110 }}>차량번호</th>
+                <th>계약자</th>
+                <th>회사</th>
+              </tr>
+            </thead>
+            <tbody>
+              {alerts.map((a) => (
+                <tr key={a.id}>
+                  <td className="center mono" style={{ color: alertColor(a.severity), fontWeight: 600 }}>
+                    {dDayLabel(a.daysLeft)}
+                  </td>
+                  <td className="center">
+                    <span className={`status ${a.severity === 'overdue' || a.severity === 'urgent' ? '미납' : '예정'}`}>{KIND_BADGE[a.kind]}</span>
+                  </td>
+                  <td className="mono">{formatDate(a.dueDate)}</td>
+                  <td className="mono">{a.vehiclePlate}</td>
+                  <td>{a.customerName}</td>
+                  <td className="dim">{a.company}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

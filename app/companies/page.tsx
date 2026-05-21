@@ -9,6 +9,7 @@ import { Sidebar } from '@/components/layout/sidebar';
 import { BottomBar } from '@/components/layout/bottom-bar';
 import { useCompanies } from '@/lib/firebase/companies-store';
 import { useContracts } from '@/lib/firebase/contracts-store';
+import { audit } from '@/lib/firebase/audit-store';
 import type {
   Company, BankAccount, CorporateCard, CompanyLocation, CompanyDocument, LocationKind,
 } from '@/lib/types';
@@ -77,8 +78,16 @@ export default function CompaniesPage() {
       const { id, ...payload } = draft;
       const newId = await add(payload);
       setSelectedId(newId);
+      void audit.create('company', newId, `법인 등록 — ${draft.name}`, {
+        name: draft.name, bizRegNo: draft.bizRegNo, corpRegNo: draft.corpRegNo,
+      });
     } else {
+      const before = sortedCompanies.find((c) => c.id === draft.id);
       await update(draft);
+      void audit.update('company', draft.id, `법인 수정 — ${draft.name}`,
+        before ? { name: before.name, bizRegNo: before.bizRegNo, corpRegNo: before.corpRegNo } : undefined,
+        { name: draft.name, bizRegNo: draft.bizRegNo, corpRegNo: draft.corpRegNo },
+      );
     }
     setDraft(null);
     setCreating(false);

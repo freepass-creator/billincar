@@ -16,6 +16,7 @@ import { applicableSubjects, ALL_SUBJECTS } from '@/lib/ledger-subjects';
 import { autoMatchAll, applyMatch, reverseMatch, applyFifoPayment } from '@/lib/receipt-match';
 import { ReceiptMatchDialog } from '@/components/receipt-match-dialog';
 import { downloadDailyLedgerExcel } from '@/lib/ledger-export';
+import { audit } from '@/lib/firebase/audit-store';
 import { todayKr } from '@/lib/mock-data';
 import type { BankTransaction, Contract } from '@/lib/types';
 
@@ -84,23 +85,33 @@ export default function PaymentsPage() {
     const { txPatch, contractPatch } = applyMatch(tx, contract, scheduleSeq);
     await updateBankTx(tx.id, txPatch);
     await updateContract({ ...contract, ...contractPatch });
+    void audit.match('bank_tx', tx.id, `${contract.contractNo} ${scheduleSeq}회차 매칭 — 입금 ₩${formatCurrency(tx.amount)}`, {
+      contractId: contract.id, scheduleSeq, amount: tx.amount, txDate: tx.txDate,
+    });
   }
 
   async function handleReverse(tx: BankTransaction) {
     const c = tx.matchedContractId ? contractById.get(tx.matchedContractId) : undefined;
     if (!c) {
       await updateBankTx(tx.id, { matchedContractId: undefined, matchedScheduleSeq: undefined, matchedAt: undefined });
+      void audit.unmatch('bank_tx', tx.id, `매칭 해제 (계약 없음) ₩${formatCurrency(tx.amount)}`);
       return;
     }
     const { txPatch, contractPatch } = reverseMatch(tx, c, todayKr());
     await updateBankTx(tx.id, txPatch);
     await updateContract({ ...c, ...contractPatch });
+    void audit.unmatch('bank_tx', tx.id, `${c.contractNo} ${tx.matchedScheduleSeq ?? '?'}회차 매칭 해제 ₩${formatCurrency(tx.amount)}`, {
+      contractId: c.id, scheduleSeq: tx.matchedScheduleSeq,
+    });
   }
 
   async function handleFifo(tx: BankTransaction, contract: Contract) {
     const { txPatch, contractPatch, leftover } = applyFifoPayment(tx, contract);
     await updateBankTx(tx.id, txPatch);
     await updateContract({ ...contract, ...contractPatch });
+    void audit.match('bank_tx', tx.id, `${contract.contractNo} 선입선출 ₩${formatCurrency(tx.amount)}${leftover > 0 ? ` (잉여 ${formatCurrency(leftover)})` : ''}`, {
+      contractId: contract.id, amount: tx.amount, leftover,
+    });
     if (leftover > 0) {
       alert(`선입선출 적용 완료 — 잉여 ₩${formatCurrency(leftover)} 원은 추가 매칭 필요`);
     }
@@ -158,6 +169,10 @@ export default function PaymentsPage() {
 
     await updateManyBankTx(txPatches);
     await updateManyContracts(Object.values(contractPatches).map((c) => c as Contract));
+    void audit.match('bank_tx', 'batch', `자동매칭 일괄 ${results.length}건`, {
+      count: results.length,
+      total: results.reduce((s, r) => s + r.tx.amount, 0),
+    });
     alert(`${results.length}건 자동 매칭 완료`);
   }
 

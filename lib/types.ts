@@ -83,6 +83,8 @@ export type Contract = {
   notifyOnAvailable?: string[];   // 차량번호 배열 — 이 차량들이 복귀하면 알림
   // 컴플라이언스 (계약상태 산출용)
   inspectionDueDate?: string;  // 다음 정기검사 예정일 (지나면 미수검)
+  insuranceExpiryDate?: string; // 자동차보험 만기일
+  vehicleTaxDueDate?: string;  // 자동차세 납부일
   hasViolations?: boolean;     // 과태료/단속 미처리 있음
   violationSince?: string;     // 위반 발생일
   // 상태
@@ -280,6 +282,28 @@ export type Vehicle = {
   notes?: string;
   currentContractId?: string;  // 운행중이면 계약 ID
   createdAt: string;
+};
+
+/** 감사 로그 — 모든 변경 추적 (누가 / 언제 / 무엇을) */
+export type AuditAction = 'create' | 'update' | 'delete' | 'restore' | 'match' | 'unmatch' | 'login' | 'logout' | 'import' | 'export';
+
+export type AuditEntityType =
+  | 'contract' | 'company' | 'vehicle'
+  | 'bank_tx' | 'card_tx' | 'schedule'
+  | 'penalty' | 'license' | 'document'
+  | 'system';
+
+export type AuditLog = {
+  id: string;
+  at: string;              // ISO timestamp
+  by?: string;             // 사용자 email (없으면 시스템)
+  byUid?: string;          // Firebase UID
+  action: AuditAction;
+  entityType: AuditEntityType;
+  entityId?: string;       // 대상 ID (있을 때)
+  label: string;           // 1줄 요약 (예: "ICR-2605-0001 1회차 자동매칭 ₩1,500,000")
+  before?: Record<string, unknown>;  // 변경 전 (선택)
+  after?: Record<string, unknown>;   // 변경 후 (선택)
 };
 
 /** 연락 기록 (미수관리) */

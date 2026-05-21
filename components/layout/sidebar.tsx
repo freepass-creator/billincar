@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  House, Warning, Buildings, Gear, CaretLeft, CaretRight, ChartBar, CurrencyKrw,
+  House, Warning, Buildings, Gear, CaretLeft, CaretRight, ChartBar, CurrencyKrw, ClipboardText,
 } from '@phosphor-icons/react';
 
 type SidebarProps = Record<string, never>;
@@ -69,6 +69,10 @@ export function Sidebar(_props: SidebarProps = {} as SidebarProps) {
         <Link href="/companies" className={`sb-item ${isActive('/companies') ? 'active' : ''}`} title="법인 관리">
           <Buildings size={14} weight={isActive('/companies') ? 'fill' : 'regular'} />
           <span>법인 관리</span>
+        </Link>
+        <Link href="/admin/audit" className={`sb-item ${isActive('/admin/audit') ? 'active' : ''}`} title="감사 로그 — 누가 언제 무엇을">
+          <ClipboardText size={14} weight={isActive('/admin/audit') ? 'fill' : 'regular'} />
+          <span>감사 로그</span>
         </Link>
         <Link href="/settings" className={`sb-item ${isActive('/settings') ? 'active' : ''}`} title="설정 (화면·계정)">
           <Gear size={14} weight={isActive('/settings') ? 'fill' : 'regular'} />
