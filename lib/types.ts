@@ -109,13 +109,30 @@ export type Contract = {
   schedules?: PaymentScheduleInline[];
 };
 
+/** 회차당 개별 납부 entry — 분납·선납 모두 수용 */
+export type PaymentEntry = {
+  date: string;          // YYYY-MM-DD — 실제 입금일
+  amount: number;
+  /** 출처 — 정산(스냅샷 자동완료) / 계좌·카드(자금일보 매칭) / 현금·수동(직접 등록) */
+  source: '정산' | '계좌' | '카드' | '현금' | '수동';
+  txId?: string;         // BankTransaction.id (source='계좌')
+  cardTxId?: string;     // CardTransaction.id (source='카드')
+  memo?: string;
+  by?: string;           // 등록자 email (수동·현금 entry)
+  at?: string;           // 등록 시각 ISO
+};
+
 /** Contract에 인라인으로 박는 회차. (PaymentSchedule 전체 모델의 contract-scope subset) */
 export type PaymentScheduleInline = {
   seq: number;
   dueDate: string;
   amount: number;
   status: ScheduleStatus;
+  /** 분납·선납 누적 — 빈 배열이면 미납. legacy: 없으면 paidAmount에서 derive. */
+  payments?: PaymentEntry[];
+  /** sum(payments.amount) — payments에서 derive되지만 캐시 (legacy 호환) */
   paidAmount: number;
+  /** 가장 최근 payments.date — legacy 호환 */
   paidAt?: string;
   notes?: string;
 };

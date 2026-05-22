@@ -14,7 +14,89 @@
  *   applyPayment(schedules, amount, txDate) → 선입선출로 가장 오래된 미납부터 차감.
  */
 
-import type { Contract, PaymentSchedule } from './types';
+import type { Contract, PaymentSchedule, PaymentScheduleInline, PaymentEntry, ScheduleStatus } from './types';
+
+/* ──────────────── 분납·선납 entry 헬퍼 ──────────────── */
+
+/** payments 합계 — undefined 안전 */
+export function sumPayments(s: { payments?: PaymentEntry[] }): number {
+  return (s.payments ?? []).reduce((sum, p) => sum + (p.amount || 0), 0);
+}
+
+/** payments 배열로부터 status·paidAmount·paidAt 자동 재계산 */
+export function recalcSchedule<T extends PaymentScheduleInline>(s: T, today: string): T {
+  if (s.status === '면제') return { ...s, paidAmount: s.amount };
+  const paid = sumPayments(s);
+  const lastDate = (s.payments ?? []).reduce<string>((mx, p) => p.date > mx ? p.date : mx, '');
+  let status: ScheduleStatus;
+  if (paid >= s.amount) status = '완료';
+  else if (paid > 0) status = '부분납';
+  else status = s.dueDate < today ? '연체' : '예정';
+  return { ...s, status, paidAmount: paid, paidAt: lastDate || undefined };
+}
+
+/** 한 회차에 payment entry 추가 + 재계산 + 초과분 반환 (선납 처리용) */
+export function addPaymentEntry<T extends PaymentScheduleInline>(
+  s: T,
+  entry: PaymentEntry,
+  today: string,
+): { schedule: T; leftover: number } {
+  const list = [...(s.payments ?? []), entry];
+  const paid = list.reduce((sum, p) => sum + p.amount, 0);
+  const leftover = Math.max(0, paid - s.amount);
+  // 초과분은 entry.amount에서 깎고 leftover만큼 빼서 마지막 entry 조정
+  if (leftover > 0) {
+    list[list.length - 1] = { ...entry, amount: entry.amount - leftover };
+  }
+  const next = recalcSchedule({ ...s, payments: list }, today);
+  return { schedule: next, leftover };
+}
+
+/** 입금 한 건을 FIFO로 여러 회차에 자동 분배 (선납·분납·정산 통합) */
+export function distributeEntry<T extends PaymentScheduleInline>(
+  schedules: T[],
+  entry: PaymentEntry,
+  today: string,
+): { schedules: T[]; consumed: Array<{ seq: number; amount: number }> } {
+  const list = schedules.map((s) => ({ ...s }));
+  // 미납 우선 (연체·부분납 → 예정), 같은 카테고리 안에서는 seq 오름차순
+  const ordered = [...list].sort((a, b) => {
+    const ra = rank(a.status);
+    const rb = rank(b.status);
+    if (ra !== rb) return ra - rb;
+    return a.seq - b.seq;
+  });
+  let remaining = Math.max(0, Math.round(entry.amount));
+  const consumed: Array<{ seq: number; amount: number }> = [];
+  for (const s of ordered) {
+    if (remaining <= 0) break;
+    if (s.status === '면제') continue;
+    const owed = Math.max(0, s.amount - sumPayments(s));
+    if (owed <= 0) continue;
+    const apply = Math.min(owed, remaining);
+    const idx = list.findIndex((x) => x.seq === s.seq);
+    if (idx < 0) continue;
+    const { schedule } = addPaymentEntry(list[idx], { ...entry, amount: apply }, today);
+    list[idx] = schedule;
+    consumed.push({ seq: s.seq, amount: apply });
+    remaining -= apply;
+  }
+  return { schedules: list, consumed };
+}
+
+/** legacy 모델 (payments 없고 paidAmount만 있는 회차) → payments 배열 마이그레이션 */
+export function migrateLegacySchedules<T extends PaymentScheduleInline>(schedules: T[]): T[] {
+  return schedules.map((s) => {
+    if (s.payments && s.payments.length > 0) return s;
+    if (s.paidAmount > 0) {
+      // 정산 entry 1건으로 변환 — paidAt 있으면 그 날짜, 없으면 dueDate
+      const date = s.paidAt || s.dueDate;
+      const payments: PaymentEntry[] = [{ date, amount: s.paidAmount, source: '정산', memo: '스냅샷 자동 정리' }];
+      return { ...s, payments };
+    }
+    return { ...s, payments: [] };
+  });
+}
 
 /** YYYY-MM-DD + n개월 → 같은 day-of-month 의 다음 달 (월말 보정) */
 function addMonths(iso: string, months: number, day: number): string {
@@ -65,41 +147,50 @@ export function generateSchedules(c: {
  *
  * 새 배열 반환 — 원본 불변.
  */
-export function distributeUnpaid<T extends Pick<PaymentSchedule, 'seq' | 'dueDate' | 'amount' | 'status' | 'paidAmount'>>(
+export function distributeUnpaid<T extends PaymentScheduleInline>(
   schedules: T[],
   unpaidAmount: number,
   today: string,
 ): T[] {
-  const list = schedules.map((s) => ({ ...s }));
+  const list = schedules.map((s) => ({ ...s, payments: [] as PaymentEntry[] }));
   let remaining = Math.max(0, Math.round(unpaidAmount));
 
-  // 회차를 dueDate 오름차순으로 정렬 후 가장 최근부터 역순
+  // dueDate 오름차순 정렬 후 가장 최근부터 역순 — 미수 채움
   const sorted = [...list].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   for (let i = sorted.length - 1; i >= 0; i--) {
     const s = sorted[i];
     if (s.dueDate > today) {
-      // 미래 회차 — 예정 유지
+      // 미래 회차 — 예정 유지 (payments 비움)
       s.status = '예정';
       s.paidAmount = 0;
+      s.paidAt = undefined;
       continue;
     }
     if (remaining <= 0) {
+      // 과거 회차 + 미수 다 차감됨 → 정산 entry 추가
+      s.payments = [{ date: s.dueDate, amount: s.amount, source: '정산', memo: '스냅샷 자동 정리' }];
       s.status = '완료';
       s.paidAmount = s.amount;
+      s.paidAt = s.dueDate;
     } else if (remaining >= s.amount) {
       s.status = '연체';
       s.paidAmount = 0;
+      s.paidAt = undefined;
       remaining -= s.amount;
     } else {
+      // 부분납 — 채워진 부분만 정산 entry로
+      const paid = s.amount - remaining;
+      s.payments = [{ date: s.dueDate, amount: paid, source: '정산', memo: '스냅샷 자동 정리 (부분)' }];
       s.status = '부분납';
-      s.paidAmount = s.amount - remaining;
+      s.paidAmount = paid;
+      s.paidAt = s.dueDate;
       remaining = 0;
     }
   }
 
   // 원래 순서대로 결과 매핑
   const map = new Map(sorted.map((s) => [s.seq, s]));
-  return list.map((s) => map.get(s.seq) ?? s);
+  return list.map((s) => map.get(s.seq) ?? s) as T[];
 }
 
 /** 회차 배열에서 currentSeq (가장 오래된 미납 또는 부분납. 없으면 다음 예정) 계산 */
@@ -135,47 +226,26 @@ export function totalUnpaidCount(schedules: Array<Pick<PaymentSchedule, 'status'
 
 /**
  * 결제 적용 — 선입선출로 가장 오래된 미납부터 차감.
- * 잔여 금액(잉여)은 leftover로 반환 — 다음 회차 prepay 또는 미매칭으로 처리.
+ * payment entry로 기록되어 분납·선납 history 보존.
+ * 잔여 금액(leftover)은 미매칭으로 처리.
  */
-export function applyPayment<T extends Pick<PaymentSchedule, 'seq' | 'dueDate' | 'amount' | 'status' | 'paidAmount'>>(
+export function applyPayment<T extends PaymentScheduleInline>(
   schedules: T[],
   amount: number,
-  _txDate: string,
-): { schedules: T[]; leftover: number } {
-  const list = schedules.map((s) => ({ ...s }));
-  let remaining = Math.max(0, Math.round(amount));
-
-  // 미납/부분납 → 예정 순서로, 같은 카테고리 안에서는 dueDate 오름차순
-  const ordered = [...list].sort((a, b) => {
-    const ra = rank(a.status);
-    const rb = rank(b.status);
-    if (ra !== rb) return ra - rb;
-    return a.dueDate.localeCompare(b.dueDate);
-  });
-
-  for (const s of ordered) {
-    if (remaining <= 0) break;
-    const owed = s.status === '연체' ? s.amount
-      : s.status === '부분납' ? Math.max(0, s.amount - s.paidAmount)
-      : s.status === '예정' ? s.amount
-      : 0;
-    if (owed <= 0) continue;
-    if (remaining >= owed) {
-      s.paidAmount = s.amount;
-      s.status = '완료';
-      remaining -= owed;
-    } else {
-      s.paidAmount += remaining;
-      s.status = '부분납';
-      remaining = 0;
-    }
-  }
-
-  const map = new Map(ordered.map((s) => [s.seq, s]));
-  return {
-    schedules: list.map((s) => map.get(s.seq) ?? s),
-    leftover: remaining,
+  txDate: string,
+  entrySource: PaymentEntry['source'] = '수동',
+  entryMeta?: Partial<Pick<PaymentEntry, 'txId' | 'cardTxId' | 'memo' | 'by'>>,
+): { schedules: T[]; leftover: number; consumed: Array<{ seq: number; amount: number }> } {
+  const entry: PaymentEntry = {
+    date: txDate,
+    amount: Math.max(0, Math.round(amount)),
+    source: entrySource,
+    ...(entryMeta ?? {}),
+    at: new Date().toISOString(),
   };
+  const { schedules: next, consumed } = distributeEntry(schedules, entry, txDate);
+  const totalConsumed = consumed.reduce((s, x) => s + x.amount, 0);
+  return { schedules: next, leftover: entry.amount - totalConsumed, consumed };
 }
 
 function rank(status: PaymentSchedule['status']): number {

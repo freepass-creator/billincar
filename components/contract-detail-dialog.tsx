@@ -1,15 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, Fragment } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import {
   User, Car, FileText, ClipboardText, ArrowsLeftRight, CurrencyKrw,
   Plus, CheckCircle, PauseCircle, PlayCircle, ArrowUUpLeft, CircleNotch,
-  Upload, Warning as WarningIcon, X as XIcon,
+  Upload, Warning as WarningIcon, X as XIcon, X, CaretRight,
 } from '@phosphor-icons/react';
 import { DialogRoot, DialogContent, DialogBody, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { DateInput } from '@/components/ui/date-input';
-import type { Contract, VehicleStatus } from '@/lib/types';
+import type { Contract, VehicleStatus, PaymentScheduleInline, PaymentEntry, ScheduleStatus } from '@/lib/types';
 import { formatCurrency, formatDateFull, daysSince } from '@/lib/utils';
 import { contractIdentMasked, birthFromIdent, inferKind } from '@/lib/ident';
 import { displayCompanyName } from '@/lib/company-display';
@@ -696,69 +696,12 @@ function ContractInfoTab({ c }: { c: Contract }) {
 /* ─────────────── 수납내역 탭 (스케줄 + 입금 + 추가) ─────────────── */
 
 function PaymentTab({ c, onUpdate }: { c: Contract; onUpdate: (u: Contract) => void }) {
-  const [addOpen, setAddOpen] = useState(false);
-  const [payAmount, setPayAmount] = useState('');
-  const [payDate, setPayDate] = useState(todayKr());
-
-  function submitPayment() {
-    const amt = parseInt(payAmount.replace(/[^0-9]/g, ''), 10);
-    if (!amt || amt <= 0) {
-      alert('금액을 입력해주세요.');
-      return;
-    }
-    const newUnpaid = Math.max(0, c.unpaidAmount - amt);
-    const newSeqCount = newUnpaid === 0 ? 0 : c.unpaidSeqCount;
-    onUpdate({
-      ...c,
-      unpaidAmount: newUnpaid,
-      unpaidSeqCount: newSeqCount,
-      lastPaidDate: payDate,
-      lastPaidAmount: amt,
-      currentSeq: newUnpaid === 0 ? Math.min(c.currentSeq + 1, c.totalSeq) : c.currentSeq,
-    });
-    setPayAmount('');
-    setAddOpen(false);
-  }
-
   return (
     <div className="detail-stack">
       <Section
         icon={<CurrencyKrw size={12} weight="duotone" />}
         title={`수납 현황 — ${c.currentSeq}/${c.totalSeq}회 · 월 ₩${formatCurrency(c.monthlyRent)}`}
-        action={
-          <button className="btn btn-sm btn-primary" onClick={() => setAddOpen((v) => !v)}>
-            <Plus size={12} weight="bold" /> 입금 추가
-          </button>
-        }
       >
-        {addOpen && (
-          <div style={{ padding: 12, background: 'var(--bg-sunken)', borderRadius: 6, marginBottom: 12 }}>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 11, color: 'var(--text-sub)' }}>일자</span>
-              <DateInput value={payDate} onChange={setPayDate} style={{ width: 160 }} />
-              <span style={{ fontSize: 11, color: 'var(--text-sub)', marginLeft: 8 }}>금액</span>
-              <input
-                type="text"
-                className="input"
-                placeholder="원 단위"
-                value={payAmount}
-                onChange={(e) => setPayAmount(e.target.value.replace(/[^0-9]/g, ''))}
-                style={{ width: 180 }}
-                autoFocus
-              />
-              <button className="btn btn-primary" onClick={submitPayment}>
-                <CheckCircle size={14} /> 저장
-              </button>
-              <button className="btn" onClick={() => setAddOpen(false)}>취소</button>
-            </div>
-            {c.unpaidAmount > 0 && (
-              <div style={{ fontSize: 11, color: 'var(--text-weak)', marginTop: 8 }}>
-                현재 미수금 ₩{formatCurrency(c.unpaidAmount)} · 월 대여료 ₩{formatCurrency(c.monthlyRent)}
-              </div>
-            )}
-          </div>
-        )}
-
         <div className="detail-grid-2" style={{ marginTop: 4 }}>
           <div>
             <Field label="현재 회차" value={`${c.currentSeq} / ${c.totalSeq}`} mono />
@@ -792,73 +735,42 @@ function PaymentTab({ c, onUpdate }: { c: Contract; onUpdate: (u: Contract) => v
   );
 }
 
-/** 입금 이력 (실제 트랜잭션) — 회차별 스케줄과 무관하게 시간순 누적 */
+/** 입금 이력 (회차별 payments 배열 flatten) — 시간순 정렬 */
 type PaymentLog = {
   date: string;
   seq: number;
   amount: number;
-  method: string;
-  source: '계좌' | '카드' | '현금' | '수동';
-  counterparty: string;
-  status: '완료' | '부분' | '예약';
+  source: PaymentEntry['source'];
+  memo?: string;
+  by?: string;
 };
 
 function generatePaymentHistory(c: Contract): PaymentLog[] {
   const logs: PaymentLog[] = [];
-  const source: 'CMS' | '카드' | '계좌' | '수동' =
-    c.paymentMethod === '카드' ? '카드'
-    : c.paymentMethod === 'CMS' || c.paymentMethod === '이체' ? '계좌'
-    : '수동';
 
-  // c.schedules 가 있으면 그 기준으로 (완료/부분납 회차만)
   if (c.schedules && c.schedules.length > 0) {
     for (const s of c.schedules) {
-      if (s.status === '완료') {
+      const pays = s.payments ?? [];
+      // legacy: payments 없는 회차의 paidAmount → 정산 entry 1건으로 환원
+      if (pays.length === 0 && s.paidAmount > 0) {
         logs.push({
-          date: s.paidAt ?? s.dueDate,
-          seq: s.seq,
-          amount: s.amount,
-          method: c.paymentMethod,
-          source,
-          counterparty: c.customerName,
-          status: '완료',
+          date: s.paidAt ?? s.dueDate, seq: s.seq, amount: s.paidAmount, source: '정산',
+          memo: '스냅샷 자동 정리',
         });
-      } else if (s.status === '부분납' && s.paidAmount > 0) {
-        logs.push({
-          date: s.paidAt ?? s.dueDate,
-          seq: s.seq,
-          amount: s.paidAmount,
-          method: c.paymentMethod,
-          source,
-          counterparty: c.customerName,
-          status: '부분',
-        });
+        continue;
+      }
+      for (const p of pays) {
+        logs.push({ date: p.date, seq: s.seq, amount: p.amount, source: p.source, memo: p.memo, by: p.by });
       }
     }
-    return logs.sort((a, b) => b.date.localeCompare(a.date));
+    return logs.sort((a, b) => b.date.localeCompare(a.date) || a.seq - b.seq);
   }
 
-  // Legacy fallback — schedules 없을 때
+  // Legacy fallback — schedules 자체가 없을 때
   for (let seq = 1; seq < c.currentSeq; seq++) {
     logs.push({
       date: addMonths(c.contractDate, seq - 1, c.paymentDay),
-      seq,
-      amount: c.monthlyRent,
-      method: c.paymentMethod,
-      source,
-      counterparty: c.customerName,
-      status: '완료',
-    });
-  }
-  if (c.lastPaidAmount && c.lastPaidAmount > 0 && c.lastPaidAmount < c.monthlyRent) {
-    logs.push({
-      date: c.lastPaidDate ?? c.contractDate,
-      seq: c.currentSeq,
-      amount: c.lastPaidAmount,
-      method: c.paymentMethod,
-      source,
-      counterparty: c.customerName,
-      status: '부분',
+      seq, amount: c.monthlyRent, source: '정산', memo: 'legacy',
     });
   }
   return logs.sort((a, b) => b.date.localeCompare(a.date));
@@ -874,22 +786,23 @@ function PaymentHistoryTable({ c }: { c: Contract }) {
     );
   }
   const total = logs.reduce((s, l) => s + l.amount, 0);
+  const realIncoming = logs.filter((l) => l.source !== '정산').reduce((s, l) => s + l.amount, 0);
   return (
     <>
-      <div style={{ fontSize: 11, color: 'var(--text-sub)', marginBottom: 6 }}>
-        누적 입금액 <span className="mono" style={{ color: 'var(--text-main)', fontWeight: 600 }}>₩{formatCurrency(total)}</span>
-        {' · '}최근순
+      <div style={{ fontSize: 11, color: 'var(--text-sub)', marginBottom: 6, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        <span>누적 입금 <span className="mono" style={{ color: 'var(--text-main)', fontWeight: 600 }}>₩{formatCurrency(total)}</span></span>
+        <span>실 입금 <span className="mono" style={{ color: 'var(--green-text)', fontWeight: 600 }}>₩{formatCurrency(realIncoming)}</span></span>
+        <span className="dim">최근순 · 정산 = 스냅샷 자동 정리</span>
       </div>
       <table className="table">
         <thead>
           <tr>
-            <th style={{ width: 110 }}>일자</th>
+            <th style={{ width: 110 }}>입금일</th>
             <th className="center" style={{ width: 60 }}>회차</th>
-            <th className="num" style={{ width: 120 }}>입금액</th>
-            <th className="center" style={{ width: 70 }}>경로</th>
-            <th>입금자</th>
-            <th>결제수단</th>
-            <th className="center" style={{ width: 70 }}>상태</th>
+            <th className="num" style={{ width: 120 }}>금액</th>
+            <th className="center" style={{ width: 70 }}>출처</th>
+            <th>메모</th>
+            <th className="mono dim" style={{ width: 160 }}>등록자</th>
           </tr>
         </thead>
         <tbody>
@@ -898,10 +811,21 @@ function PaymentHistoryTable({ c }: { c: Contract }) {
               <td className="mono">{formatDateFull(l.date)}</td>
               <td className="center mono">{l.seq}회</td>
               <td className="num mono">₩{formatCurrency(l.amount)}</td>
-              <td className="center"><span className="chip" style={{ height: 18, padding: '0 8px', fontSize: 10, fontWeight: 500 }}>{l.source}</span></td>
-              <td>{l.counterparty}</td>
-              <td className="dim">{l.method}</td>
-              <td className="center"><span className={`status ${l.status === '완료' ? '완료' : '부분'}`}>{l.status}</span></td>
+              <td className="center">
+                <span className="chip" style={{
+                  height: 18, padding: '0 8px', fontSize: 10, fontWeight: 500,
+                  background: l.source === '정산' ? 'var(--bg-sunken)'
+                    : l.source === '계좌' ? 'var(--blue-bg)'
+                    : l.source === '카드' ? 'var(--purple-bg)'
+                    : 'var(--green-bg)',
+                  color: l.source === '정산' ? 'var(--text-weak)'
+                    : l.source === '계좌' ? 'var(--blue-text)'
+                    : l.source === '카드' ? 'var(--purple-text)'
+                    : 'var(--green-text)',
+                }}>{l.source}</span>
+              </td>
+              <td className="dim">{l.memo || '-'}</td>
+              <td className="mono dim">{l.by ?? (l.source === '정산' ? '(자동)' : '-')}</td>
             </tr>
           ))}
         </tbody>
@@ -911,37 +835,35 @@ function PaymentHistoryTable({ c }: { c: Contract }) {
 }
 
 function ScheduleTable({ c, onUpdate }: { c: Contract; onUpdate: (u: Contract) => void }) {
-  // c.schedules 가 있으면(운영현황 업로드로 자동 분배됨) 우선 사용, 없으면 legacy derive
-  const rows = c.schedules && c.schedules.length > 0
-    ? c.schedules.map((s) => ({
-        seq: s.seq,
-        dueDate: s.dueDate,
-        amount: s.amount,
-        status: s.status,
-        paidAmount: s.paidAmount,
-      }))
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [addOpenSeq, setAddOpenSeq] = useState<number | null>(null);
+  const [addDate, setAddDate] = useState(todayKr());
+  const [addAmount, setAddAmount] = useState('');
+  const [addMemo, setAddMemo] = useState('');
+
+  // legacy 회차 (payments 없음, paidAmount만 있음) → migrate-on-read
+  const schedulesNorm: PaymentScheduleInline[] = (c.schedules && c.schedules.length > 0)
+    ? c.schedules.map((s) => {
+        if (s.payments && s.payments.length > 0) return s;
+        if (s.paidAmount > 0) {
+          return { ...s, payments: [{ date: s.paidAt ?? s.dueDate, amount: s.paidAmount, source: '정산', memo: '스냅샷 자동 정리' }] };
+        }
+        return { ...s, payments: [] };
+      })
     : Array.from({ length: c.totalSeq }, (_, i) => {
         const seq = i + 1;
         const isPaid = seq < c.currentSeq;
-        const isCurrent = seq === c.currentSeq;
-        const unpaidThis = c.unpaidAmount > 0 && (isCurrent || (c.unpaidSeqCount > 1 && seq >= c.currentSeq - c.unpaidSeqCount + 1));
+        const dueDate = addMonths(c.contractDate, i, c.paymentDay);
         return {
-          seq,
-          dueDate: addMonths(c.contractDate, i, c.paymentDay),
-          amount: c.monthlyRent,
-          status: (isPaid ? '완료' : unpaidThis ? '연체' : '예정') as '완료' | '연체' | '예정',
-          paidAmount: isPaid ? c.monthlyRent : unpaidThis ? Math.max(0, c.monthlyRent - c.unpaidAmount) : 0,
+          seq, dueDate, amount: c.monthlyRent,
+          status: (isPaid ? '완료' : '예정') as ScheduleStatus,
+          paidAmount: isPaid ? c.monthlyRent : 0,
+          payments: isPaid ? [{ date: dueDate, amount: c.monthlyRent, source: '정산' as const, memo: 'legacy' }] : [],
         };
       });
 
-  /**
-   * 회차 단위 액션 — 사용자가 ScheduleTable 에서 직접 status 변경.
-   * c.schedules 가 인라인 모델이므로 onUpdate 로 patch.
-   */
-  function patchSchedule(seq: number, patch: Partial<NonNullable<Contract['schedules']>[number]>) {
-    const sched = (c.schedules ?? []).map((s) => (s.seq === seq ? { ...s, ...patch } : s));
-    // 캐시 재계산
-    const totalUnpaid = sched.reduce((sum, s) => {
+  function persist(sched: PaymentScheduleInline[]) {
+    const totalUnpaidNow = sched.reduce((sum, s) => {
       if (s.status === '연체') return sum + s.amount;
       if (s.status === '부분납') return sum + Math.max(0, s.amount - s.paidAmount);
       return sum;
@@ -951,66 +873,250 @@ function ScheduleTable({ c, onUpdate }: { c: Contract; onUpdate: (u: Contract) =
     const currentSeq = overdue[0]?.seq
       ?? sched.find((s) => s.status === '예정')?.seq
       ?? sched.length;
+    const last = sched.flatMap((s) => s.payments ?? []).sort((a, b) => b.date.localeCompare(a.date))[0];
     onUpdate({
       ...c,
       schedules: sched,
-      unpaidAmount: totalUnpaid,
+      unpaidAmount: totalUnpaidNow,
       unpaidSeqCount,
       currentSeq,
+      lastPaidDate: last?.date,
+      lastPaidAmount: last?.amount,
     });
   }
 
-  function handleManualComplete(seq: number) {
-    if (!confirm(`${seq}회차를 '수동 완료'로 처리하시겠습니까?\n(외부 결제·현금 수령 등 영수 완료한 경우)`)) return;
-    const target = rows.find((r) => r.seq === seq);
-    patchSchedule(seq, { status: '완료', paidAmount: target?.amount ?? 0, paidAt: new Date().toISOString().slice(0, 10) });
+  function toggleExpand(seq: number) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(seq)) next.delete(seq); else next.add(seq);
+      return next;
+    });
   }
+
+  function startAddPayment(seq: number) {
+    const s = schedulesNorm.find((x) => x.seq === seq);
+    if (!s) return;
+    setAddOpenSeq(seq);
+    setAddDate(todayKr());
+    setAddAmount(String(Math.max(0, s.amount - s.paidAmount)));
+    setAddMemo('');
+    setExpanded((prev) => new Set([...prev, seq]));
+  }
+
+  function commitAddPayment() {
+    if (addOpenSeq == null) return;
+    const amt = parseInt(addAmount.replace(/[^0-9]/g, ''), 10);
+    if (!amt || amt <= 0) { alert('금액을 입력하세요.'); return; }
+    const today = todayKr();
+    const entry: PaymentEntry = {
+      date: addDate || today, amount: amt, source: '수동',
+      memo: addMemo || undefined, at: new Date().toISOString(),
+    };
+    // 선납 자동 분배 — 해당 회차부터 시작해서 초과분은 다음 회차로
+    let remaining = amt;
+    const next = schedulesNorm.map((s) => ({ ...s, payments: [...(s.payments ?? [])] }));
+    const startIdx = next.findIndex((s) => s.seq === addOpenSeq);
+    for (let i = startIdx; i < next.length && remaining > 0; i++) {
+      const s = next[i];
+      if (s.status === '면제') continue;
+      const owed = Math.max(0, s.amount - s.payments.reduce((sum, p) => sum + p.amount, 0));
+      if (owed <= 0) continue;
+      const apply = Math.min(owed, remaining);
+      s.payments.push({ ...entry, amount: apply, memo: i > startIdx ? `${entry.memo ?? '선납'} (선납 from ${addOpenSeq}회차)` : entry.memo });
+      const paid = s.payments.reduce((sum, p) => sum + p.amount, 0);
+      const lastDate = s.payments.reduce<string>((mx, p) => p.date > mx ? p.date : mx, '');
+      s.paidAmount = paid;
+      s.paidAt = lastDate || undefined;
+      if (paid >= s.amount) s.status = '완료';
+      else if (paid > 0) s.status = '부분납';
+      remaining -= apply;
+    }
+    persist(next);
+    setAddOpenSeq(null);
+    setAddAmount('');
+    setAddMemo('');
+  }
+
+  function removePayment(seq: number, idx: number) {
+    if (!confirm(`이 입금 기록을 삭제하시겠습니까?`)) return;
+    const today = todayKr();
+    const next = schedulesNorm.map((s) => {
+      if (s.seq !== seq) return { ...s };
+      const payments = [...(s.payments ?? [])];
+      payments.splice(idx, 1);
+      const paid = payments.reduce((sum, p) => sum + p.amount, 0);
+      const lastDate = payments.reduce<string>((mx, p) => p.date > mx ? p.date : mx, '');
+      let status: ScheduleStatus = s.status;
+      if (s.status !== '면제') {
+        if (paid >= s.amount) status = '완료';
+        else if (paid > 0) status = '부분납';
+        else status = s.dueDate < today ? '연체' : '예정';
+      }
+      return { ...s, payments, paidAmount: paid, paidAt: lastDate || undefined, status };
+    });
+    persist(next);
+  }
+
   function handleExempt(seq: number) {
     if (!confirm(`${seq}회차를 '면제'로 처리하시겠습니까?\n(미수에서 제외됨)`)) return;
-    const target = rows.find((r) => r.seq === seq);
-    patchSchedule(seq, { status: '면제', paidAmount: target?.amount ?? 0 });
+    const next = schedulesNorm.map((s) => s.seq === seq ? { ...s, status: '면제' as ScheduleStatus, paidAmount: s.amount } : { ...s });
+    persist(next);
   }
+
   function handleRevert(seq: number) {
-    if (!confirm(`${seq}회차를 '연체'로 되돌리시겠습니까?\n(완료·면제 처리를 취소)`)) return;
-    patchSchedule(seq, { status: '연체', paidAmount: 0, paidAt: undefined });
+    if (!confirm(`${seq}회차의 모든 입금/면제 처리를 취소하시겠습니까?`)) return;
+    const today = todayKr();
+    const next = schedulesNorm.map((s) => {
+      if (s.seq !== seq) return { ...s };
+      return { ...s, payments: [], paidAmount: 0, paidAt: undefined, status: (s.dueDate < today ? '연체' : '예정') as ScheduleStatus };
+    });
+    persist(next);
   }
 
   return (
     <table className="table">
       <thead>
         <tr>
+          <th className="center" style={{ width: 36 }}></th>
           <th className="center" style={{ width: 50 }}>회차</th>
           <th>예정일</th>
           <th className="num">예정금액</th>
           <th className="num">입금액</th>
           <th className="num">잔액</th>
-          <th className="center" style={{ width: 80 }}>상태</th>
-          <th className="center" style={{ width: 140 }}>액션</th>
+          <th className="mono" style={{ width: 100 }}>최종입금일</th>
+          <th className="center" style={{ width: 70 }}>상태</th>
+          <th className="center" style={{ width: 160 }}>액션</th>
         </tr>
       </thead>
       <tbody>
-        {rows.map((r) => (
-          <tr key={r.seq}>
-            <td className="center mono">{r.seq}</td>
-            <td className="mono">{formatDateFull(r.dueDate)}</td>
-            <td className="num mono">{formatCurrency(r.amount)}</td>
-            <td className="num mono">{formatCurrency(r.paidAmount)}</td>
-            <td className={`num mono ${r.amount - r.paidAmount > 0 ? 'danger' : ''}`}>
-              {formatCurrency(r.amount - r.paidAmount)}
-            </td>
-            <td className="center"><span className={`status ${r.status}`}>{r.status}</span></td>
-            <td className="center">
-              {(r.status === '연체' || r.status === '예정' || r.status === '부분납') ? (
-                <span style={{ display: 'inline-flex', gap: 4 }}>
-                  <button className="btn btn-sm" type="button" onClick={() => handleManualComplete(r.seq)} title="수동 완료 (현금/외부 결제)">완료</button>
-                  <button className="btn btn-sm" type="button" onClick={() => handleExempt(r.seq)} title="면제 (미수 제외)">면제</button>
-                </span>
-              ) : (r.status === '완료' || r.status === '면제') ? (
-                <button className="btn btn-sm btn-ghost" type="button" onClick={() => handleRevert(r.seq)} title="연체로 되돌리기">되돌리기</button>
-              ) : null}
-            </td>
-          </tr>
-        ))}
+        {schedulesNorm.map((r) => {
+          const isExpanded = expanded.has(r.seq);
+          const balance = r.amount - r.paidAmount;
+          const pays = r.payments ?? [];
+          const owed = r.status === '면제' ? 0 : balance;
+          return (
+            <Fragment key={r.seq}>
+              <tr style={{ cursor: pays.length > 0 ? 'pointer' : undefined }} onClick={() => pays.length > 0 && toggleExpand(r.seq)}>
+                <td className="center">
+                  {pays.length > 0 ? (
+                    <CaretRight size={10} weight="bold" style={{ transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', color: 'var(--text-weak)' }} />
+                  ) : null}
+                </td>
+                <td className="center mono">{r.seq}</td>
+                <td className="mono">{formatDateFull(r.dueDate)}</td>
+                <td className="num mono">{formatCurrency(r.amount)}</td>
+                <td className="num mono">{formatCurrency(r.paidAmount)}</td>
+                <td className={`num mono ${owed > 0 ? 'danger' : ''}`}>
+                  {formatCurrency(balance)}
+                </td>
+                <td className="mono dim">{r.paidAt ? formatDateFull(r.paidAt) : '-'}</td>
+                <td className="center"><span className={`status ${r.status}`}>{r.status}</span></td>
+                <td className="center" onClick={(e) => e.stopPropagation()}>
+                  {r.status !== '면제' && owed > 0 ? (
+                    <span style={{ display: 'inline-flex', gap: 4 }}>
+                      <button className="btn btn-sm btn-primary" type="button" onClick={() => startAddPayment(r.seq)} title="분할/일부 입금 기록">
+                        <Plus size={10} weight="bold" /> 입금
+                      </button>
+                      <button className="btn btn-sm" type="button" onClick={() => handleExempt(r.seq)} title="면제 (미수 제외)">면제</button>
+                    </span>
+                  ) : (r.status === '완료' || r.status === '면제') ? (
+                    <span style={{ display: 'inline-flex', gap: 4 }}>
+                      {r.status === '완료' && owed === 0 && (
+                        <button className="btn btn-sm" type="button" onClick={() => startAddPayment(r.seq)} title="선납 추가">
+                          <Plus size={10} weight="bold" /> 선납
+                        </button>
+                      )}
+                      <button className="btn btn-sm btn-ghost" type="button" onClick={() => handleRevert(r.seq)} title="모든 입금·면제 취소">되돌리기</button>
+                    </span>
+                  ) : null}
+                </td>
+              </tr>
+
+              {/* 입금 추가 입력 행 */}
+              {addOpenSeq === r.seq && (
+                <tr>
+                  <td colSpan={9} style={{ background: 'var(--bg-sunken)', padding: 10 }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 11, color: 'var(--text-sub)' }}>입금일</span>
+                      <DateInput value={addDate} onChange={setAddDate} style={{ width: 150 }} />
+                      <span style={{ fontSize: 11, color: 'var(--text-sub)', marginLeft: 6 }}>금액</span>
+                      <input
+                        type="text" className="input mono" placeholder="원 단위"
+                        value={addAmount}
+                        onChange={(e) => setAddAmount(e.target.value.replace(/[^0-9]/g, ''))}
+                        style={{ width: 140 }}
+                        autoFocus
+                      />
+                      <span style={{ fontSize: 11, color: 'var(--text-sub)', marginLeft: 6 }}>메모</span>
+                      <input
+                        type="text" className="input" placeholder="현금/외부결제 등"
+                        value={addMemo} onChange={(e) => setAddMemo(e.target.value)}
+                        style={{ width: 200 }}
+                      />
+                      <button className="btn btn-sm btn-primary" type="button" onClick={commitAddPayment}>
+                        <CheckCircle size={11} /> 저장
+                      </button>
+                      <button className="btn btn-sm" type="button" onClick={() => setAddOpenSeq(null)}>취소</button>
+                      <span style={{ fontSize: 10, color: 'var(--text-weak)' }}>
+                        ※ 회차 금액 초과분은 다음 회차로 자동 선납 처리
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              )}
+
+              {/* 펼침 — 분납 내역 */}
+              {isExpanded && pays.length > 0 && (
+                <tr>
+                  <td colSpan={9} style={{ background: 'var(--bg-sunken)', padding: 8 }}>
+                    <table className="table" style={{ fontSize: 11, margin: 0 }}>
+                      <thead>
+                        <tr>
+                          <th style={{ width: 100 }}>입금일</th>
+                          <th className="num" style={{ width: 110 }}>금액</th>
+                          <th className="center" style={{ width: 60 }}>출처</th>
+                          <th>메모</th>
+                          <th className="mono dim" style={{ width: 140 }}>등록자</th>
+                          <th className="center" style={{ width: 50 }}></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pays.map((p, idx) => (
+                          <tr key={idx}>
+                            <td className="mono">{formatDateFull(p.date)}</td>
+                            <td className="num mono">₩{formatCurrency(p.amount)}</td>
+                            <td className="center">
+                              <span className="chip" style={{
+                                height: 16, padding: '0 6px', fontSize: 10,
+                                background: p.source === '정산' ? 'var(--bg-sunken)'
+                                  : p.source === '계좌' ? 'var(--blue-bg)'
+                                  : p.source === '카드' ? 'var(--purple-bg)'
+                                  : 'var(--green-bg)',
+                                color: p.source === '정산' ? 'var(--text-weak)'
+                                  : p.source === '계좌' ? 'var(--blue-text)'
+                                  : p.source === '카드' ? 'var(--purple-text)'
+                                  : 'var(--green-text)',
+                              }}>{p.source}</span>
+                            </td>
+                            <td className="dim">{p.memo || '-'}</td>
+                            <td className="mono dim">{p.by ?? (p.source === '정산' ? '(자동)' : '-')}</td>
+                            <td className="center">
+                              {p.source !== '계좌' && p.source !== '카드' && (
+                                <button className="btn btn-sm btn-ghost btn-icon" type="button" onClick={() => removePayment(r.seq, idx)} title="삭제">
+                                  <X size={10} />
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </td>
+                </tr>
+              )}
+            </Fragment>
+          );
+        })}
       </tbody>
     </table>
   );

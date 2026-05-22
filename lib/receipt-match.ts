@@ -15,8 +15,8 @@
  *   - Contract.unpaidAmount / unpaidSeqCount 캐시 재계산
  */
 
-import type { BankTransaction, CardTransaction, Contract, PaymentScheduleInline } from './types';
-import { applyPayment, totalUnpaid, totalUnpaidCount, computeCurrentSeq } from './payment-schedule';
+import type { BankTransaction, CardTransaction, Contract, PaymentEntry, PaymentScheduleInline } from './types';
+import { applyPayment, totalUnpaid, totalUnpaidCount, computeCurrentSeq, addPaymentEntry } from './payment-schedule';
 
 /** 이름 정규화 — 공백 제거, 소문자 */
 function normName(s: string): string {
@@ -84,14 +84,21 @@ export function applyMatch(
   txPatch: Partial<BankTransaction>;
   contractPatch: Partial<Contract> & { schedules: PaymentScheduleInline[] };
 } {
-  const schedules = (contract.schedules ?? []).map((s) => ({ ...s }));
-  const target = schedules.find((s) => s.seq === scheduleSeq);
-  if (!target) {
+  const schedules = (contract.schedules ?? []).map((s) => ({ ...s, payments: [...(s.payments ?? [])] }));
+  const idx = schedules.findIndex((s) => s.seq === scheduleSeq);
+  if (idx < 0) {
     throw new Error(`회차 ${scheduleSeq} 를 찾을 수 없습니다 (계약 ${contract.contractNo})`);
   }
-  target.status = '완료';
-  target.paidAmount = target.amount;
-  target.paidAt = tx.txDate;
+  const entry: PaymentEntry = {
+    date: tx.txDate,
+    amount: tx.amount,
+    source: '계좌',
+    txId: tx.id,
+    by: actorEmail,
+    at: new Date().toISOString(),
+  };
+  const { schedule: nextTarget } = addPaymentEntry(schedules[idx], entry, tx.txDate);
+  schedules[idx] = nextTarget;
 
   const newUnpaid = totalUnpaid(schedules);
   const newUnpaidCount = totalUnpaidCount(schedules);
@@ -128,13 +135,20 @@ export function reverseMatch(
   txPatch: Partial<BankTransaction>;
   contractPatch: Partial<Contract> & { schedules: PaymentScheduleInline[] };
 } {
-  const schedules = (contract.schedules ?? []).map((s) => ({ ...s }));
-  const target = schedules.find((s) => s.seq === tx.matchedScheduleSeq);
-  if (target) {
-    target.status = '연체';
-    target.paidAmount = 0;
-    target.paidAt = undefined;
-  }
+  // tx.id로 연결된 모든 payment entry 제거 (분할매칭도 포함)
+  const schedules = (contract.schedules ?? []).map((s) => {
+    const filtered = (s.payments ?? []).filter((p) => p.txId !== tx.id);
+    if (filtered.length === (s.payments ?? []).length) return { ...s };
+    const paid = filtered.reduce((sum, p) => sum + p.amount, 0);
+    const lastDate = filtered.reduce<string>((mx, p) => p.date > mx ? p.date : mx, '');
+    let status = s.status;
+    if (s.status !== '면제') {
+      if (paid >= s.amount) status = '완료';
+      else if (paid > 0) status = '부분납';
+      else status = s.dueDate < today ? '연체' : '예정';
+    }
+    return { ...s, payments: filtered, paidAmount: paid, paidAt: lastDate || undefined, status };
+  });
 
   return {
     txPatch: {
@@ -243,12 +257,19 @@ export function applyCardMatch(
   txPatch: Partial<CardTransaction>;
   contractPatch: Partial<Contract> & { schedules: PaymentScheduleInline[] };
 } {
-  const schedules = (contract.schedules ?? []).map((s) => ({ ...s }));
-  const target = schedules.find((s) => s.seq === scheduleSeq);
-  if (!target) throw new Error(`회차 ${scheduleSeq} 를 찾을 수 없습니다`);
-  target.status = '완료';
-  target.paidAmount = target.amount;
-  target.paidAt = tx.txDate;
+  const schedules = (contract.schedules ?? []).map((s) => ({ ...s, payments: [...(s.payments ?? [])] }));
+  const idx = schedules.findIndex((s) => s.seq === scheduleSeq);
+  if (idx < 0) throw new Error(`회차 ${scheduleSeq} 를 찾을 수 없습니다`);
+  const entry: PaymentEntry = {
+    date: tx.txDate,
+    amount: tx.amount,
+    source: '카드',
+    cardTxId: tx.id,
+    by: actorEmail,
+    at: new Date().toISOString(),
+  };
+  const { schedule: nextTarget } = addPaymentEntry(schedules[idx], entry, tx.txDate);
+  schedules[idx] = nextTarget;
 
   return {
     txPatch: {
@@ -307,7 +328,7 @@ export function applyFifoPayment(
   leftover: number;
 } {
   const schedules = contract.schedules ?? [];
-  const { schedules: newSched, leftover } = applyPayment(schedules, tx.amount, tx.txDate);
+  const { schedules: newSched, leftover } = applyPayment(schedules, tx.amount, tx.txDate, '계좌', { txId: tx.id });
 
   return {
     txPatch: {
