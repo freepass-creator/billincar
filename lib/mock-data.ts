@@ -128,15 +128,32 @@ export function buildOverdue(contracts: Contract[], today: string): OverdueItem[
       });
     }
     if (c.unpaidAmount > 0) {
-      const refDate = c.lastPaidDate || c.contractDate;
-      const expected = addDays(refDate, 35);
-      if (expected < today) {
+      // 미납 일수 = 가장 오래된 연체·부분납 회차의 dueDate ~ 오늘
+      const overdue = (c.schedules ?? [])
+        .filter((s) => s.status === '연체' || s.status === '부분납')
+        .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+      let referenceDate: string;
+      if (overdue.length > 0) {
+        referenceDate = overdue[0].dueDate;
+      } else if (c.currentSeq && c.contractDate) {
+        // legacy 폴백 — currentSeq 기준 dueDate 역산
+        const [y, m] = c.contractDate.split('-').map((s) => parseInt(s, 10));
+        const targetM0 = (m - 1) + (c.currentSeq - 1);
+        const year = y + Math.floor(targetM0 / 12);
+        const month = ((targetM0 % 12) + 12) % 12 + 1;
+        const lastDay = new Date(year, month, 0).getDate();
+        const d = Math.min(c.paymentDay || 1, lastDay);
+        referenceDate = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      } else {
+        continue;
+      }
+      if (referenceDate < today) {
         out.push({
           contractId: c.id, type: '결제지연',
           customerName: c.customerName, vehiclePlate: c.vehiclePlate,
           vehicleModel: c.vehicleModel, company: c.company, manager: c.manager,
-          referenceDate: expected,
-          overdueDays: daysBetween(expected, today),
+          referenceDate,
+          overdueDays: daysBetween(referenceDate, today),
           unpaidAmount: c.unpaidAmount,
         });
       }
