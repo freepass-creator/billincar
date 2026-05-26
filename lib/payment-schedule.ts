@@ -71,6 +71,42 @@ export function addPaymentEntry<T extends PaymentScheduleInline>(
   return { schedule: next, leftover };
 }
 
+/**
+ * 계약 전체를 오늘 날짜 기준으로 재계산 — read 시점에 호출.
+ *
+ *   - 각 회차의 status를 dueDate + payments + discounts + today로 다시 결정
+ *     (스냅샷 업로드 후 시간 흐르면 '예정' → '연체' 자동 전환)
+ *   - unpaidAmount / unpaidSeqCount / currentSeq 캐시 재계산
+ *
+ * DB에는 쓰지 않고 화면 표시용으로만 사용. read transform에 적용.
+ */
+export function recalcContract<T extends Contract>(c: T, today: string): T {
+  if (!c.schedules || c.schedules.length === 0) return c;
+  const recalcedSchedules = c.schedules.map((s) => recalcSchedule(s, today));
+  // 미수 = sum(연체·부분납 회차의 잔액)
+  let unpaidAmount = 0;
+  let unpaidSeqCount = 0;
+  for (const s of recalcedSchedules) {
+    if (s.status === '연체') {
+      unpaidAmount += effectiveAmount(s);
+      unpaidSeqCount += 1;
+    } else if (s.status === '부분납') {
+      unpaidAmount += Math.max(0, effectiveAmount(s) - s.paidAmount);
+      unpaidSeqCount += 1;
+    }
+  }
+  const overdue = recalcedSchedules.filter((s) => s.status === '연체' || s.status === '부분납').sort((a, b) => a.seq - b.seq);
+  const upcoming = recalcedSchedules.filter((s) => s.status === '예정' && s.dueDate >= today).sort((a, b) => a.seq - b.seq);
+  const currentSeq = overdue[0]?.seq ?? upcoming[0]?.seq ?? recalcedSchedules.length;
+  return {
+    ...c,
+    schedules: recalcedSchedules,
+    unpaidAmount,
+    unpaidSeqCount,
+    currentSeq,
+  };
+}
+
 /** 한 회차에 할인 entry 추가 + 재계산. 할인 합계가 청구금액 초과 시 자동 cap. */
 export function addDiscountEntry<T extends PaymentScheduleInline>(
   s: T,

@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { ref, onValue, set, update as rtdbUpdate, remove as rtdbRemove, push } from 'firebase/database';
 import { getRtdb, icarPath, isFirebaseConfigured, ensureAuth, pruneUndefined } from './client';
 import { audit } from './audit-store';
+import { recalcContract } from '@/lib/payment-schedule';
+import { todayKr } from '@/lib/mock-data';
 import type { Contract } from '@/lib/types';
 
 const CONTRACTS_PATH = icarPath('contracts');
@@ -50,7 +52,12 @@ export function useContracts(): {
       const r = ref(db, CONTRACTS_PATH);
       unsub = onValue(r, (snap) => {
         const val = snap.val();
-        setContracts(val ? Object.values<Contract>(val) : []);
+        const raw = val ? Object.values<Contract>(val) : [];
+        // read 시점 자동 재계산 — dueDate 지난 '예정' 회차 → '연체' 자동 전환
+        // unpaidAmount, unpaidSeqCount, currentSeq 캐시 fresh 보장
+        const today = todayKr();
+        const recalced = raw.map((c) => recalcContract(c, today));
+        setContracts(recalced);
         setLoading(false);
       });
     })();
