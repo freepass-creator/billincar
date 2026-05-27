@@ -1041,7 +1041,8 @@ function VehiclePaymentsTab({ c }: { c: Contract }) {
   // 모든 payment entry flatten + 계약 정보 부착
   type Row = {
     date: string;
-    amount: number;
+    chargeAmount: number;  // 청구액 = schedule.amount (회차 청구금액)
+    amount: number;         // 입금액 = payment.amount
     customerName: string;
     contractDate: string;
     contractId: string;
@@ -1057,6 +1058,7 @@ function VehiclePaymentsTab({ c }: { c: Contract }) {
         for (const p of s.payments ?? []) {
           out.push({
             date: p.date,
+            chargeAmount: s.amount,
             amount: p.amount,
             customerName: con.customerName || '(미정)',
             contractDate: con.contractDate,
@@ -1084,17 +1086,34 @@ function VehiclePaymentsTab({ c }: { c: Contract }) {
   const realIncoming = rows.filter((r) => r.source !== '정산').reduce((s, r) => s + r.amount, 0);
   const settledAmount = rows.filter((r) => r.source === '정산').reduce((s, r) => s + r.amount, 0);
 
-  // 계약자별 그룹 (시각적 구분용)
+  // 계약자별 그룹 — 누적 입금 + 현재 미수 (시각적 구분용)
   const customerGroups = useMemo(() => {
-    const m = new Map<string, { name: string; contractDate: string; total: number }>();
+    const m = new Map<string, { name: string; contractDate: string; total: number; unpaid: number; contractId: string }>();
     for (const r of rows) {
       const key = `${r.customerName}|${r.contractDate}`;
-      const prev = m.get(key) ?? { name: r.customerName, contractDate: r.contractDate, total: 0 };
+      const prev = m.get(key) ?? { name: r.customerName, contractDate: r.contractDate, total: 0, unpaid: 0, contractId: r.contractId };
       prev.total += r.amount;
       m.set(key, prev);
     }
+    // 현재 미수는 vehicleContracts에서 직접 가져옴
+    for (const con of vehicleContracts) {
+      const key = `${con.customerName || '(미정)'}|${con.contractDate}`;
+      const existing = m.get(key);
+      if (existing) {
+        existing.unpaid = con.unpaidAmount || 0;
+      } else if ((con.unpaidAmount || 0) > 0) {
+        // 입금은 없지만 미수만 있는 케이스
+        m.set(key, {
+          name: con.customerName || '(미정)',
+          contractDate: con.contractDate,
+          total: 0,
+          unpaid: con.unpaidAmount || 0,
+          contractId: con.id,
+        });
+      }
+    }
     return Array.from(m.values()).sort((a, b) => b.contractDate.localeCompare(a.contractDate));
-  }, [rows]);
+  }, [rows, vehicleContracts]);
 
   // 행 색상 alternation — 계약자 바뀔 때마다 토글
   const rowTints = useMemo(() => {
@@ -1131,7 +1150,7 @@ function VehiclePaymentsTab({ c }: { c: Contract }) {
       </Section>
 
       {/* 계약자별 요약 (시각 구분 도움) */}
-      {customerGroups.length > 1 && (
+      {customerGroups.length > 0 && (
         <Section icon={<User size={12} weight="duotone" />} title={`계약자 ${customerGroups.length}명`}>
           <table className="table" style={{ fontSize: 11 }}>
             <thead>
@@ -1139,6 +1158,7 @@ function VehiclePaymentsTab({ c }: { c: Contract }) {
                 <th>계약자</th>
                 <th className="mono">계약일자</th>
                 <th className="num">누적 입금액</th>
+                <th className="num">현재 미수</th>
               </tr>
             </thead>
             <tbody>
@@ -1147,6 +1167,9 @@ function VehiclePaymentsTab({ c }: { c: Contract }) {
                   <td>{g.name}</td>
                   <td className="mono dim">{formatDateFull(g.contractDate)}</td>
                   <td className="num mono">₩{formatCurrency(g.total)}</td>
+                  <td className="num mono" style={{ color: g.unpaid > 0 ? 'var(--red-text)' : undefined }}>
+                    {g.unpaid > 0 ? `₩${formatCurrency(g.unpaid)}` : <span className="muted">없음</span>}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1154,7 +1177,7 @@ function VehiclePaymentsTab({ c }: { c: Contract }) {
         </Section>
       )}
 
-      {/* 통합 수납이력 — 채권탭 대응 */}
+      {/* 통합 수납이력 — 채권탭 대응 (청구액 + 입금액 분리) */}
       <Section icon={<CurrencyKrw size={12} weight="duotone" />} title={`수납이력 — ${rows.length}건 (최근순)`}>
         {rows.length === 0 ? (
           <div style={{ padding: 32, color: 'var(--text-weak)', textAlign: 'center', fontSize: 12 }}>
@@ -1164,11 +1187,12 @@ function VehiclePaymentsTab({ c }: { c: Contract }) {
           <table className="table">
             <thead>
               <tr>
-                <th style={{ width: 110 }}>일자</th>
+                <th style={{ width: 100 }}>일자</th>
                 <th>계약자</th>
-                <th className="mono dim" style={{ width: 110 }}>계약일자</th>
-                <th className="center mono" style={{ width: 60 }}>회차</th>
-                <th className="num" style={{ width: 120 }}>금액</th>
+                <th className="mono dim" style={{ width: 100 }}>계약일자</th>
+                <th className="center mono" style={{ width: 56 }}>회차</th>
+                <th className="num" style={{ width: 110 }}>청구액</th>
+                <th className="num" style={{ width: 110 }}>입금액</th>
                 <th className="center" style={{ width: 60 }}>방식</th>
                 <th>메모</th>
               </tr>
@@ -1176,13 +1200,17 @@ function VehiclePaymentsTab({ c }: { c: Contract }) {
             <tbody>
               {rows.map((r, i) => {
                 const tint = rowTints.get(`${r.date}-${r.contractId}-${r.seq}`) ?? 0;
+                const partial = r.amount < r.chargeAmount;
                 return (
                   <tr key={i} style={{ background: tint === 0 ? undefined : 'var(--bg-sunken)' }}>
                     <td className="mono">{formatDateFull(r.date)}</td>
                     <td style={{ fontWeight: 500 }}>{r.customerName}</td>
                     <td className="mono dim">{formatDateFull(r.contractDate)}</td>
                     <td className="center mono dim">{r.seq}회</td>
-                    <td className="num mono">₩{formatCurrency(r.amount)}</td>
+                    <td className="num mono dim">₩{formatCurrency(r.chargeAmount)}</td>
+                    <td className="num mono" style={{ fontWeight: 600, color: partial ? 'var(--orange-text)' : undefined }}>
+                      ₩{formatCurrency(r.amount)}
+                    </td>
                     <td className="center">
                       <span className="chip" style={{
                         height: 18, padding: '0 8px', fontSize: 10, fontWeight: 500,
@@ -1196,7 +1224,7 @@ function VehiclePaymentsTab({ c }: { c: Contract }) {
                           : 'var(--green-text)',
                       }}>{r.source}</span>
                     </td>
-                    <td className="dim">{r.memo || (r.by ? `(${r.by})` : '-')}</td>
+                    <td className="dim">{partial ? `부분납 (잔액 ₩${formatCurrency(r.chargeAmount - r.amount)})` : (r.memo || (r.by ? `(${r.by})` : '-'))}</td>
                   </tr>
                 );
               })}
