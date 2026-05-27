@@ -1787,46 +1787,58 @@ function HistoryListTab({ scope, c }: { scope: 'contract' | 'vehicle'; c: Contra
           <div style={{ fontSize: 11, color: 'var(--text-sub)', marginBottom: 8 }}>
             이 차량의 모든 계약 — 현재 계약 포함 시간순
           </div>
-          <table className="table" style={{ fontSize: 11 }}>
-            <thead>
-              <tr>
-                <th>계약자</th>
-                <th className="mono" style={{ width: 110 }}>계약일자</th>
-                <th className="mono" style={{ width: 100 }}>반납예정</th>
-                <th className="mono" style={{ width: 100 }}>인도일</th>
-                <th className="mono" style={{ width: 100 }}>반납일</th>
-                <th className="num" style={{ width: 90 }}>월대여료</th>
-                <th className="num" style={{ width: 90 }}>보증금</th>
-                <th className="num" style={{ width: 90 }}>미수</th>
-                <th className="center" style={{ width: 70 }}>상태</th>
-                <th style={{ width: 64 }}>회차</th>
-              </tr>
-            </thead>
-            <tbody>
-              {allVehicleContracts.map((p) => {
-                const isCurrent = p.id === c.id;
-                return (
-                  <tr key={p.id} style={isCurrent ? { background: 'var(--brand-bg)', fontWeight: 500 } : undefined}>
-                    <td>
-                      {isCurrent && <span style={{ color: 'var(--brand)', marginRight: 4 }}>●</span>}
-                      {p.customerName || <span className="dim">(휴차)</span>}
-                    </td>
-                    <td className="mono">{formatDateFull(p.contractDate)}</td>
-                    <td className="mono dim">{formatDateFull(p.returnScheduledDate) || '-'}</td>
-                    <td className="mono dim">{formatDateFull(p.deliveredDate) || '-'}</td>
-                    <td className="mono dim">{formatDateFull(p.returnedDate) || '-'}</td>
-                    <td className="num mono">{p.monthlyRent ? `₩${formatCurrency(p.monthlyRent)}` : '-'}</td>
-                    <td className="num mono dim">{p.deposit ? `₩${formatCurrency(p.deposit)}` : '-'}</td>
-                    <td className="num mono" style={{ color: (p.unpaidAmount ?? 0) > 0 ? 'var(--red-text)' : undefined }}>
-                      {(p.unpaidAmount ?? 0) > 0 ? `₩${formatCurrency(p.unpaidAmount!)}` : '-'}
-                    </td>
-                    <td className="center"><span className={`status ${p.status}`}>{p.status}</span></td>
-                    <td className="mono dim">{p.currentSeq && p.totalSeq ? `${p.currentSeq}/${p.totalSeq}` : '-'}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div style={{ overflow: 'auto' }}>
+            <table className="table" style={{ fontSize: 11, minWidth: 1400 }}>
+              <thead>
+                <tr>
+                  <th>계약자</th>
+                  <th className="mono" style={{ width: 100 }}>계약일자</th>
+                  <th className="mono" style={{ width: 90 }}>반납예정</th>
+                  <th className="mono" style={{ width: 90 }}>인도일</th>
+                  <th className="mono" style={{ width: 90 }}>반납일</th>
+                  <th className="center" style={{ width: 56 }}>약정</th>
+                  <th className="num" style={{ width: 90 }}>월대여료</th>
+                  <th className="num" style={{ width: 90 }}>보증금</th>
+                  <th className="center" style={{ width: 60 }}>결제일</th>
+                  <th style={{ width: 70 }}>결제방법</th>
+                  <th className="center" style={{ width: 60 }}>보험</th>
+                  <th className="num" style={{ width: 90 }}>미수</th>
+                  <th className="center" style={{ width: 64 }}>상태</th>
+                  <th style={{ width: 56 }}>회차</th>
+                  <th style={{ minWidth: 140 }}>비고</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allVehicleContracts.map((p) => {
+                  const isCurrent = p.id === c.id;
+                  return (
+                    <tr key={p.id} style={isCurrent ? { background: 'var(--brand-bg)', fontWeight: 500 } : undefined}>
+                      <td>
+                        {isCurrent && <span style={{ color: 'var(--brand)', marginRight: 4 }}>●</span>}
+                        {p.customerName || <span className="dim">(휴차)</span>}
+                      </td>
+                      <td className="mono">{formatDateFull(p.contractDate)}</td>
+                      <td className="mono dim">{formatDateFull(p.returnScheduledDate) || '-'}</td>
+                      <td className="mono dim">{formatDateFull(p.deliveredDate) || '-'}</td>
+                      <td className="mono dim">{formatDateFull(p.returnedDate) || '-'}</td>
+                      <td className="center mono dim">{p.termMonths ? `${p.termMonths}M` : '-'}</td>
+                      <td className="num mono">{p.monthlyRent ? `₩${formatCurrency(p.monthlyRent)}` : '-'}</td>
+                      <td className="num mono dim">{p.deposit ? `₩${formatCurrency(p.deposit)}` : '-'}</td>
+                      <td className="center mono dim">{p.paymentDay ? `${p.paymentDay}일` : '-'}</td>
+                      <td className="dim">{p.paymentMethod || '-'}</td>
+                      <td className="center mono dim">{p.insuranceAge ? `${p.insuranceAge}세` : '-'}</td>
+                      <td className="num mono" style={{ color: (p.unpaidAmount ?? 0) > 0 ? 'var(--red-text)' : undefined }}>
+                        {(p.unpaidAmount ?? 0) > 0 ? `₩${formatCurrency(p.unpaidAmount!)}` : '-'}
+                      </td>
+                      <td className="center"><span className={`status ${p.status}`}>{p.status}</span></td>
+                      <td className="mono dim">{p.currentSeq && p.totalSeq ? `${p.currentSeq}/${p.totalSeq}` : '-'}</td>
+                      <td className="dim" style={{ whiteSpace: 'normal', wordBreak: 'keep-all', fontSize: 10 }}>{p.notes || '-'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </Section>
       )}
 
