@@ -454,6 +454,151 @@ export function applySnapshotToContract(
   };
 }
 
+/* ──────────────── 가로확장 다중 계약 파싱 ──────────────── */
+
+/**
+ * 한 차량 행에 좌→우로 N개 계약자가 펼쳐진 시트 (스위치플랜 사업현황 등) 파서.
+ *
+ * 컬럼 블록 (8개 반복):
+ *   구분 | 고객명 | 인도일자 | 종료일자 | 반납일자 | 대여료 | 보증금 | 영업자
+ *
+ * 좌측 = 현재 계약 / 우측 = 직전 계약 / 더 우측 = 더 이전.
+ *
+ * 한 행 → SnapshotPatch[] (계약자명 있는 블록 갯수만큼 반환).
+ *
+ *   const result = parseHorizontalContractsRow(headers, rowArray, companies);
+ *   // result.contracts = [현재계약, 직전계약, ...] 시간 내림차순
+ *   // result.contracts[0].contractDate 가 가장 최근
+ */
+export type HorizontalParseResult = {
+  vehiclePlate: string;
+  vehicleModel: string;
+  company: string;
+  contracts: SnapshotPatch[];
+};
+
+const NAME_KEY_RE = /^(고객명|계약자|계약자명|임차인|임차인명)$/;
+const VEHICLE_KEY_RE = /^(차량번호|자산번호|차량|번호판|plate)$/;
+const VEHICLE_MODEL_RE = /^(차종|차명|model)$/;
+const COMPANY_RE = /^(회사|법인|company)$/;
+
+/** 한 텍스트 = 컬럼 헤더 정규화 (공백/별표 제거, 소문자) */
+function normHeader(s: string): string {
+  return (s ?? '').replace(/\s+/g, '').replace(/\*/g, '').toLowerCase();
+}
+
+export function parseHorizontalContractsRow(
+  headers: string[],
+  row: unknown[],
+  companies?: Company[],
+): HorizontalParseResult | null {
+  const normHeaders = headers.map(normHeader);
+
+  // 1) 차량 레벨 컬럼 위치
+  const plateIdx = normHeaders.findIndex((h) => VEHICLE_KEY_RE.test(h));
+  const modelIdx = normHeaders.findIndex((h) => VEHICLE_MODEL_RE.test(h));
+  const companyIdx = normHeaders.findIndex((h) => COMPANY_RE.test(h));
+
+  const plate = plateIdx >= 0 ? toStr(row[plateIdx]) : '';
+  if (!plate) return null;
+
+  const model = modelIdx >= 0 ? toStr(row[modelIdx]) : '';
+  const companyRaw = companyIdx >= 0 ? toStr(row[companyIdx]) : '';
+  const company = resolveCompanyByRegNo(companyRaw, companies) || companyRaw;
+
+  // 2) "고객명" / "계약자" 헤더가 등장하는 모든 컬럼 위치 (각 블록의 anchor)
+  const customerCols: number[] = [];
+  normHeaders.forEach((h, i) => {
+    if (NAME_KEY_RE.test(h)) customerCols.push(i);
+  });
+
+  // 3) 각 anchor 주변 블록에서 데이터 추출
+  //    블록 범위: anchor 좌측 2칸 ~ 우측 6칸 (총 9칸) — 다음 anchor 만나면 거기까지
+  const contracts: SnapshotPatch[] = [];
+  for (let n = 0; n < customerCols.length; n++) {
+    const anchor = customerCols[n];
+    const customerName = toStr(row[anchor]);
+    if (!customerName) continue;  // 빈 블록 스킵
+
+    const blockStart = Math.max(plateIdx + 1, anchor - 1);
+    const blockEnd = n + 1 < customerCols.length ? customerCols[n + 1] : Math.min(headers.length, anchor + 8);
+
+    const findInBlock = (matcher: RegExp): unknown => {
+      for (let i = blockStart; i < blockEnd; i++) {
+        if (matcher.test(normHeaders[i])) return row[i];
+      }
+      return undefined;
+    };
+
+    const customerKindRaw = toStr(findInBlock(/^구분$/));
+    const customerKind = pickCustomerKind(customerKindRaw);
+    const deliveredDate = toDate(findInBlock(/^(인도일|인도일자|출고일|출고일자)$/));
+    const returnScheduled = toDate(findInBlock(/^(종료일|종료일자|반납예정|반납예정일)$/));
+    const returnedDate = toDate(findInBlock(/^(반납일|반납일자)$/));
+    const monthlyRent = toNum(findInBlock(/^(대여료|월대여료|렌트료|월렌트료)$/));
+    const deposit = toNum(findInBlock(/^(보증금|보증금액)$/));
+    const salesperson = toStr(findInBlock(/^(영업자|영업담당|영업담당자|담당자|매니저|manager)$/));
+    const contractDateOpt = toDate(findInBlock(/^(계약일|계약일자|계약시작일)$/));
+    const paymentDayRaw = toNum(findInBlock(/^(결제일|납기일|paymentday)$/));
+    const phone = toStr(findInBlock(/^(연락처|연락처1|전화|핸드폰|hp|phone)$/));
+
+    // 계약일 = 계약일 컬럼 우선, 없으면 인도일, 없으면 종료일에서 termMonths 만큼 뺀 추정
+    const contractDate = contractDateOpt || deliveredDate
+      || (returnScheduled ? returnScheduled : '');
+    if (!contractDate) continue;  // 일자 정보 없으면 skip
+
+    // 약정개월 — 계약일~종료일로 추정
+    let termMonths = 12;
+    if (returnScheduled && contractDate) {
+      const d1 = new Date(contractDate);
+      const d2 = new Date(returnScheduled);
+      termMonths = Math.max(1, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24 * 30)));
+    }
+
+    // 결제일
+    const paymentDay = (paymentDayRaw >= 1 && paymentDayRaw <= 31)
+      ? Math.floor(paymentDayRaw)
+      : (contractDate ? parseInt(contractDate.slice(8, 10), 10) || 1 : 1);
+
+    // 현재(n=0) vs 과거 계약 구분
+    const isCurrent = n === 0;
+    const hasReturned = !!returnedDate;
+    const vehicleStatus: VehicleStatus = hasReturned ? '반납' : (isCurrent ? '운행' : '반납');
+
+    contracts.push({
+      vehiclePlate: plate,
+      vehicleModel: model || '미정',
+      company,
+      customerName,
+      customerPhone1: phone,
+      contractDate,
+      returnScheduledDate: returnScheduled || '',
+      termMonths,
+      deposit,
+      monthlyRent,
+      paymentDay,
+      paymentMethod: '이체',
+      vehicleStatus,
+      currentSeq: 1,
+      unpaidAmount: 0,
+      unpaidSeqCount: 0,
+    });
+
+    // 부가 정보 (영업자, 구분) — patch에는 직접 매핑 안 됨. notes에 저장하거나 추후 확장.
+    void salesperson; void customerKind; void hasReturned;
+  }
+
+  return { vehiclePlate: plate, vehicleModel: model, company, contracts };
+}
+
+/**
+ * 가로확장 패턴 자동 감지 — 헤더에 '고객명'/'계약자' 가 2회 이상 등장하면 multi-contract.
+ */
+export function isHorizontalMultiContractSheet(headers: string[]): boolean {
+  const count = headers.filter((h) => NAME_KEY_RE.test(normHeader(h))).length;
+  return count >= 2;
+}
+
 /* ──────────────── 은행 거래 (입금 + 출금) ──────────────── */
 
 /**

@@ -26,6 +26,7 @@ import {
   parseVehicleRow, parseContractRow, parseBankTxRow, parseCardTxRow,
   matchTransactions, applyPaymentsToContracts,
   applySnapshotToContract, validateSnapshotRow,
+  parseHorizontalContractsRow, isHorizontalMultiContractSheet,
 } from '@/lib/import-commit';
 import { dedupAgainst } from '@/lib/dedup';
 import { bankTxKeys, cardTxKeys, vehicleKeys, contractKeys } from '@/lib/dedup-keys';
@@ -180,6 +181,39 @@ export function CreateDialog({
     }
   }
 
+  /** 가로확장 다중계약 시트 import — 한 행에서 N개 contract 추출 */
+  async function commitHorizontalSheet(sheet: ParsedSheet) {
+    setBusy(true);
+    try {
+      const all: Array<Omit<Contract, 'id'>> = [];
+      const dataRows = sheet.rawAoa.slice(sheet.headerRow + 1);
+      for (const row of dataRows) {
+        if (!row || row.every((v) => v == null || String(v).trim() === '')) continue;
+        const result = parseHorizontalContractsRow(sheet.headers, row, companies);
+        if (!result || result.contracts.length === 0) continue;
+        for (const patch of result.contracts) {
+          const out = applySnapshotToContract(undefined, patch);  // 가로확장은 무조건 신규 (각 계약이 별건)
+          all.push(out as Omit<Contract, 'id'>);
+        }
+      }
+      // 중복 검증 (재 import 안전)
+      const dedup = dedupAgainst(all, contracts, contractKeys);
+      const skipped = dedup.duplicates.length;
+      const created = await addContracts(dedup.unique);
+      const msg = `가로확장 import 완료 — ${created}건 등록${skipped > 0 ? ` (중복 ${skipped}건 제외)` : ''}`;
+      setResult(msg);
+      if (created > 0) toast.success(`계약 ${created}건 import`);
+      else if (skipped > 0) toast.warning(`전부 중복 — ${skipped}건 제외`);
+      else toast.warning('가져올 계약이 없습니다');
+    } catch (e) {
+      const m = friendlyError(e);
+      setResult(`오류 — ${m}`);
+      toast.error(m);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function commitSnapshotRows(rows: Record<string, unknown>[]) {
     setBusy(true);
     try {
@@ -319,7 +353,7 @@ export function CreateDialog({
               onDrop={(e) => { if (mode !== '이력' && mode !== '차량' && mode !== '현황') onDrop(e); }}
             >
               <Tabs.Content value="현황">
-                <SnapshotPane onCommit={commitSnapshotRows} busy={busy} result={result} />
+                <SnapshotPane onCommit={commitSnapshotRows} onCommitHorizontal={commitHorizontalSheet} busy={busy} result={result} />
               </Tabs.Content>
               <Tabs.Content value="차량">
                 <VehicleRegisterPane
@@ -1125,9 +1159,10 @@ function VehicleExcelPane({
 /* ─────────────── 현황 스냅샷 Pane — 차량번호 upsert ─────────────── */
 
 function SnapshotPane({
-  onCommit, busy, result,
+  onCommit, onCommitHorizontal, busy, result,
 }: {
   onCommit: (rows: Record<string, unknown>[]) => Promise<void>;
+  onCommitHorizontal?: (sheet: ParsedSheet) => Promise<void>;
   busy: boolean;
   result: string | null;
 }) {
@@ -1152,6 +1187,12 @@ function SnapshotPane({
     }
     setSheets((prev) => [...prev, ...out]);
   }, []);
+
+  // 가로확장 다중계약 시트 자동감지
+  const horizontalSheets = useMemo(
+    () => sheets.filter((s) => isHorizontalMultiContractSheet(s.headers)),
+    [sheets],
+  );
 
   // 기존 DB 색인 — 중복 판정용 (호출 시점 계약/차량과 비교)
   const existingPlates = useMemo(() => {
@@ -1304,6 +1345,35 @@ function SnapshotPane({
           onChange={(e) => { if (e.target.files) { void handleFiles(Array.from(e.target.files)); e.target.value = ''; } }}
         />
       </div>
+
+      {/* 가로확장 다중계약 시트 감지 시 — 별도 import 안내 */}
+      {horizontalSheets.length > 0 && onCommitHorizontal && (
+        <div style={{
+          padding: 14, background: 'var(--brand-bg)', border: '1px solid var(--brand)',
+          borderRadius: 6, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+        }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--brand)' }}>
+              📋 가로확장 다중계약 시트 감지 ({horizontalSheets.length}개)
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-sub)', marginTop: 2 }}>
+              한 차량 행에 [고객명·인도일·종료일·반납일·대여료·보증금·영업자] 블록이 N개 반복.<br />
+              우측 버튼으로 import 하면 차량당 N개 계약(현재 + 과거)이 모두 등록됩니다.
+            </div>
+          </div>
+          {horizontalSheets.map((s, i) => (
+            <button
+              key={i}
+              className="btn btn-primary"
+              type="button"
+              disabled={busy}
+              onClick={() => onCommitHorizontal(s)}
+            >
+              <CheckCircle weight="bold" /> {s.sheetName} import
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* 검증 결과 표 */}
       <div style={{ maxHeight: 380, overflow: 'auto', border: '1px solid var(--border)' }}>
