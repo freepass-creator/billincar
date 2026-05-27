@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ref, push, get, update as rtdbUpdate } from 'firebase/database';
+import { ref, push, get, update as rtdbUpdate, remove as rtdbRemove } from 'firebase/database';
 import { Database, Upload, Warning, CheckCircle } from '@phosphor-icons/react';
 import { Sidebar } from '@/components/layout/sidebar';
 import { getRtdb, icarPath, ensureAuth, pruneUndefined } from '@/lib/firebase/client';
@@ -29,8 +29,10 @@ type SeedReceivable = {
 
 const COMPANY_CODES: CompanyCode[] = ['아이카', '달카', '렌트로', '직카', '기타'];
 function mapCompany(s: string): CompanyCode {
-  for (const c of COMPANY_CODES) if (s.includes(c)) return c;
-  return '아이카';
+  const t = (s ?? '').trim();
+  if (!t) return '기타';
+  for (const c of COMPANY_CODES) if (t.includes(c)) return c;
+  return t as CompanyCode;  // 알 수 없는 회사명 원본 보존
 }
 function mapMethod(m: string): PaymentEntry['source'] {
   const t = (m || '').toLowerCase();
@@ -45,9 +47,16 @@ function normalize(s: string): string {
   return (s ?? '').trim().toLowerCase();
 }
 
-/** 계약 dedup composite 키 — plate + contractDate + customerName */
-function contractKey(c: { vehiclePlate?: string; contractDate?: string; customerName?: string }): string {
-  return `${normalize(c.vehiclePlate ?? '')}|${c.contractDate ?? ''}|${normalize(c.customerName ?? '')}`;
+/** 차량+고객 기준 그룹키 (contractDate 차이 흡수) */
+function groupKey(c: { vehiclePlate?: string; customerName?: string }): string {
+  return `${normalize(c.vehiclePlate ?? '')}|${normalize(c.customerName ?? '')}`;
+}
+
+/** 실 입금(정산 아닌) entry 갯수 — 중복 그룹에서 keeper 선택 기준 */
+function countRealPayments(c: Contract): number {
+  return (c.schedules ?? [])
+    .flatMap((s) => s.payments ?? [])
+    .filter((p) => p.source !== '정산').length;
 }
 
 export default function MigrateSheetPage() {
@@ -57,9 +66,10 @@ export default function MigrateSheetPage() {
   const [log, setLog] = useState<string[]>([]);
   const [stats, setStats] = useState<{
     contractsCreated: number;
-    contractsSkipped: number;
+    contractsDeleted: number;
+    contractsCompanyFixed: number;
     paymentsAdded: number;
-    paymentsSkipped: number;
+    settlementsRemoved: number;
     unmatched: number;
   } | null>(null);
 
@@ -72,8 +82,11 @@ export default function MigrateSheetPage() {
   async function runFullMigration() {
     if (!superAdmin) { toast.error('관리자만 실행 가능합니다'); return; }
     if (!window.confirm(
-      `구글 시트에서 계약 ${data.contracts.length}건 + 결제 ${data.receivables.length}건을 import 합니다.\n\n` +
-      `· 기존 계약과 중복은 자동 skip\n· 결제는 차량+계약일 매칭해서 schedules.payments에 추가\n· '정산' placeholder는 실 입금으로 자동 대체\n\n진행하시겠습니까?`,
+      `구글 시트 import + 중복 자동 정리\n\n` +
+      `· 같은 (차량번호+고객명) 중복 발견 시 실 입금 데이터 많은 쪽 keeper, 나머지 삭제\n` +
+      `· 회사명 잘못된 경우 (예: 아이카로 박힘) 시드값으로 자동 보정\n` +
+      `· 'spillover/스냅샷 자동 정리' 는 실 입금과 같은 월(회차)에 있으면 제거\n` +
+      `· 결제는 차량+계약일 매칭 → schedules.payments에 추가\n\n진행하시겠습니까?`,
     )) return;
 
     setRunning(true);
@@ -91,181 +104,272 @@ export default function MigrateSheetPage() {
       const existingContracts = Object.values(existing);
       append(`현재 DB: 계약 ${existingContracts.length}건`);
 
-      const existingKeys = new Set(existingContracts.map(contractKey));
+      // ─── 1. (차량+고객) 그룹 인덱스 — 중복 통합 기반 ───
+      const groupMap = new Map<string, Contract[]>();
+      for (const c of existingContracts) {
+        const k = groupKey(c);
+        const arr = groupMap.get(k) ?? [];
+        arr.push(c);
+        groupMap.set(k, arr);
+      }
 
-      // ─── 1. 계약 생성 (시트 → Contract) ───
-      append(`시드 계약 ${data.contracts.length}건 변환 중...`);
-      const allContractsById = new Map<string, Contract>();
-      for (const c of existingContracts) allContractsById.set(c.id, c);
+      let contractsCreated = 0;
+      let contractsDeleted = 0;
+      let contractsCompanyFixed = 0;
+      const writeBatch: Record<string, Contract | null> = {};  // null = delete
+      const keptContracts = new Map<string, Contract>();  // groupKey → kept contract
 
-      const newBatch: Record<string, Contract> = {};
-      let createdCount = 0;
-      let skippedDup = 0;
-
+      // ─── 2. 시드 계약 처리 ───
+      append(`시드 계약 ${data.contracts.length}건 처리 중...`);
       for (const s of data.contracts) {
-        const key = contractKey(s);
-        if (existingKeys.has(key)) { skippedDup += 1; continue; }
-        existingKeys.add(key);  // 시드 내 중복도 방지
-
+        const k = groupKey(s);
+        const correctCompany = mapCompany(s.company);
         const termMonths = s.returnScheduledDate && s.contractDate
           ? Math.max(1, Math.round((new Date(s.returnScheduledDate).getTime() - new Date(s.contractDate).getTime()) / (1000 * 60 * 60 * 24 * 30)))
           : 12;
-        const schedules: PaymentScheduleInline[] = generateSchedules({
-          contractDate: s.contractDate,
-          termMonths,
-          monthlyRent: s.monthlyRent,
-          paymentDay: s.paymentDay,
-        }).map((sch) => ({ ...sch }));
-        const yy = s.contractDate.slice(2, 4);
-        const mm = s.contractDate.slice(5, 7);
-        const seqHash = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
 
-        const newRef = push(ref(db, icarPath('contracts')));
-        const id = newRef.key;
-        if (!id) continue;
+        const dbGroup = groupMap.get(k) ?? [];
 
-        const c: Contract = {
-          id,
-          contractNo: `ICR-${yy}${mm}-${seqHash}`,
-          company: mapCompany(s.company),
-          manager: s.salesperson || undefined,
-          customerName: s.customerName,
-          customerPhone1: s.customerPhone1,
-          vehiclePlate: s.vehiclePlate,
-          vehicleModel: s.vehicleModel,
-          vehicleStatus: s.returnedDate ? '반납' : (s.isCurrent ? '운행' : '반납'),
-          contractDate: s.contractDate,
-          deliveredDate: s.deliveredDate || undefined,
-          returnScheduledDate: s.returnScheduledDate || undefined,
-          returnedDate: s.returnedDate || undefined,
-          termMonths,
-          longTerm: termMonths >= 12,
-          monthlyRent: s.monthlyRent,
-          deposit: s.deposit,
-          paymentDay: s.paymentDay,
-          paymentMethod: s.paymentMethod,
-          status: s.returnedDate ? '반납' : (s.isCurrent ? '운행' : '반납'),
-          currentSeq: 1,
-          totalSeq: termMonths,
-          unpaidAmount: 0,
-          unpaidSeqCount: 0,
-          schedules,
-        };
-        newBatch[id] = pruneUndefined(c);
-        allContractsById.set(id, c);
-        createdCount += 1;
+        if (dbGroup.length === 0) {
+          // 신규 — 그대로 추가
+          const schedules: PaymentScheduleInline[] = generateSchedules({
+            contractDate: s.contractDate,
+            termMonths,
+            monthlyRent: s.monthlyRent,
+            paymentDay: s.paymentDay,
+          }).map((sch) => ({ ...sch }));
+          const yy = s.contractDate.slice(2, 4);
+          const mm = s.contractDate.slice(5, 7);
+          const seqHash = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+          const newRef = push(ref(db, icarPath('contracts')));
+          const id = newRef.key;
+          if (!id) continue;
+          const c: Contract = {
+            id, contractNo: `ICR-${yy}${mm}-${seqHash}`,
+            company: correctCompany,
+            manager: s.salesperson || undefined,
+            customerName: s.customerName, customerPhone1: s.customerPhone1,
+            vehiclePlate: s.vehiclePlate, vehicleModel: s.vehicleModel,
+            vehicleStatus: s.returnedDate ? '반납' : (s.isCurrent ? '운행' : '반납'),
+            contractDate: s.contractDate,
+            deliveredDate: s.deliveredDate || undefined,
+            returnScheduledDate: s.returnScheduledDate || undefined,
+            returnedDate: s.returnedDate || undefined,
+            termMonths, longTerm: termMonths >= 12,
+            monthlyRent: s.monthlyRent, deposit: s.deposit,
+            paymentDay: s.paymentDay, paymentMethod: s.paymentMethod,
+            status: s.returnedDate ? '반납' : (s.isCurrent ? '운행' : '반납'),
+            currentSeq: 1, totalSeq: termMonths,
+            unpaidAmount: 0, unpaidSeqCount: 0,
+            schedules,
+          };
+          writeBatch[id] = pruneUndefined(c);
+          keptContracts.set(k, c);
+          contractsCreated += 1;
+          continue;
+        }
+
+        // 기존 계약 있음 — keeper 선택
+        // 정렬: 실입금 많은 것 우선 → contractDate 최근 → 회사명 시드와 일치하는 것
+        const sorted = [...dbGroup].sort((a, b) => {
+          const ra = countRealPayments(a); const rb = countRealPayments(b);
+          if (ra !== rb) return rb - ra;
+          if (a.contractDate !== b.contractDate) return (b.contractDate || '').localeCompare(a.contractDate || '');
+          return (a.company === correctCompany ? -1 : 1) - (b.company === correctCompany ? -1 : 1);
+        });
+        const keeper = sorted[0];
+        const losers = sorted.slice(1);
+
+        // keeper 의 회사명 보정 (시드 기준)
+        let keeperUpdated = keeper;
+        if (keeper.company !== correctCompany) {
+          keeperUpdated = { ...keeper, company: correctCompany };
+          contractsCompanyFixed += 1;
+        }
+        // 시드와 contractDate / monthlyRent / deposit 도 보정 (시드가 신뢰소스)
+        if (keeperUpdated.contractDate !== s.contractDate || keeperUpdated.monthlyRent !== s.monthlyRent || keeperUpdated.deposit !== s.deposit) {
+          keeperUpdated = {
+            ...keeperUpdated,
+            contractDate: s.contractDate,
+            deliveredDate: s.deliveredDate || keeperUpdated.deliveredDate,
+            returnScheduledDate: s.returnScheduledDate || keeperUpdated.returnScheduledDate,
+            returnedDate: s.returnedDate || keeperUpdated.returnedDate,
+            monthlyRent: s.monthlyRent,
+            deposit: s.deposit,
+            paymentDay: s.paymentDay,
+            termMonths,
+            totalSeq: Math.max(keeperUpdated.totalSeq ?? 0, termMonths),
+          };
+        }
+        if (keeperUpdated !== keeper) writeBatch[keeper.id] = pruneUndefined(keeperUpdated);
+        keptContracts.set(k, keeperUpdated);
+
+        // losers 삭제 + 그들의 실입금 entry 를 keeper 로 이전
+        for (const loser of losers) {
+          const lostReal = (loser.schedules ?? [])
+            .flatMap((s) => (s.payments ?? []).filter((p) => p.source !== '정산'));
+          // keeper schedules 에 lost 실입금 추가 (회차 매칭 — paymentDate 기준)
+          if (lostReal.length > 0) {
+            const keeperSchedules = keeperUpdated.schedules ?? [];
+            for (const p of lostReal) {
+              const [cy, cm] = keeperUpdated.contractDate.split('-').map(Number);
+              const [py, pm] = p.date.split('-').map(Number);
+              const seqGuess = (py - cy) * 12 + (pm - cm) + 1;
+              const seq = Math.max(1, Math.min(keeperUpdated.totalSeq || 99, seqGuess));
+              const sched = keeperSchedules.find((sch) => sch.seq === seq);
+              if (!sched) continue;
+              const exists = (sched.payments ?? []).some((e) => e.date === p.date && e.amount === p.amount && e.source !== '정산');
+              if (exists) continue;
+              if (!sched.payments) sched.payments = [];
+              sched.payments.push(p);
+            }
+            writeBatch[keeper.id] = pruneUndefined({ ...keeperUpdated, schedules: keeperSchedules });
+          }
+          writeBatch[loser.id] = null;  // 삭제 마커
+          contractsDeleted += 1;
+        }
       }
 
-      append(`신규 ${createdCount}건 / 기존중복 skip ${skippedDup}건`);
-      if (createdCount > 0) {
-        await rtdbUpdate(ref(db, icarPath('contracts')), newBatch as unknown as Record<string, unknown>);
-        append(`✓ 계약 ${createdCount}건 DB 저장 완료`);
-      }
+      append(`정리: 신규 ${contractsCreated} / 회사보정 ${contractsCompanyFixed} / 중복삭제 ${contractsDeleted}`);
 
-      // ─── 2. 결제 매칭 (allContractsById 기준 — 신규+기존 통합) ───
+      // ─── 3. 시트의 결제 매칭 ───
       append(`결제 ${data.receivables.length}건 매칭 중...`);
+      const allKept = new Map<string, Contract>();
+      // DB에 살아남는 것 + 신규 추가된 것 합쳐서 다시 그룹 매핑
+      for (const c of existingContracts) {
+        if (writeBatch[c.id] === null) continue;  // 삭제 예정
+        const current = (writeBatch[c.id] as Contract | undefined) ?? c;
+        allKept.set(current.id, current);
+      }
+      for (const [id, v] of Object.entries(writeBatch)) {
+        if (v === null) continue;
+        if (!allKept.has(id)) allKept.set(id, v as Contract);
+      }
       const byPlate = new Map<string, Contract[]>();
-      for (const c of allContractsById.values()) {
+      for (const c of allKept.values()) {
         const arr = byPlate.get(normalize(c.vehiclePlate)) ?? [];
         arr.push(c);
         byPlate.set(normalize(c.vehiclePlate), arr);
       }
 
-      // contracts에 변경 사항 누적 (Map<id, Contract>)
-      const dirty = new Map<string, Contract>();
-      let added = 0;
-      let alreadyHad = 0;
+      let paymentsAdded = 0;
       let unmatched = 0;
+      const paymentDirty = new Map<string, Contract>();
 
       for (const r of data.receivables) {
         const candidates = byPlate.get(normalize(r.vehiclePlate));
         if (!candidates || candidates.length === 0) { unmatched += 1; continue; }
-
-        // contractDate 동일 우선, 없으면 paymentDate가 contract 기간에 들어가는 것
-        let target = candidates.find((c) => c.contractDate === r.contractDate);
-        if (!target) {
-          target = candidates.find((c) => {
-            const from = c.contractDate;
-            const to = c.returnScheduledDate ?? '9999-12-31';
-            return r.paymentDate >= from && r.paymentDate <= to;
-          });
-        }
+        // 가장 적합한 contract — paymentDate가 contract 기간 안에 있는 것
+        let target = candidates.find((c) => {
+          const from = c.contractDate;
+          const to = c.returnScheduledDate ?? '9999-12-31';
+          return r.paymentDate >= from && r.paymentDate <= to;
+        });
+        if (!target) target = candidates.find((c) => normalize(c.customerName) === normalize(r.customerName));
         if (!target) target = candidates[0];
 
-        // dirty Map 에서 working copy 가져오거나 새로 생성
-        const working = dirty.get(target.id) ?? {
+        const working = paymentDirty.get(target.id) ?? {
           ...target,
-          schedules: (target.schedules ?? []).map((s) => ({ ...s, payments: [...(s.payments ?? [])] })),
+          schedules: (target.schedules ?? []).map((sc) => ({ ...sc, payments: [...(sc.payments ?? [])] })),
         };
-
-        // 결제일자 → seq 추정 (월 단위)
         const [cy, cm] = working.contractDate.split('-').map(Number);
         const [py, pm] = r.paymentDate.split('-').map(Number);
-        const seqGuess = (py - cy) * 12 + (pm - cm) + 1;
-        const seq = Math.max(1, Math.min(working.totalSeq || 99, seqGuess));
+        const seq = Math.max(1, Math.min(working.totalSeq || 99, (py - cy) * 12 + (pm - cm) + 1));
         const sched = working.schedules?.find((s) => s.seq === seq);
         if (!sched) { unmatched += 1; continue; }
-
-        // 중복 (같은 날짜+금액) 이미 있으면 skip
-        const exists = (sched.payments ?? []).some(
-          (e) => e.date === r.paymentDate && e.amount === r.amount && e.source !== '정산',
-        );
-        if (exists) { alreadyHad += 1; continue; }
-
+        const exists = (sched.payments ?? []).some((e) => e.date === r.paymentDate && e.amount === r.amount && e.source !== '정산');
+        if (exists) continue;
         if (!sched.payments) sched.payments = [];
         sched.payments.push({
-          date: r.paymentDate,
-          amount: r.amount,
+          date: r.paymentDate, amount: r.amount,
           source: mapMethod(r.method),
           memo: `시트 import (${r.method.trim() || '입금'})`,
         });
-        // 정산 entry 제거 (실 입금으로 대체)
-        sched.payments = sched.payments.filter((e) => e.source !== '정산');
-        sched.paidAmount = sched.payments.reduce((s, p) => s + p.amount, 0);
-        sched.paidAt = sched.payments.reduce((mx, p) => p.date > mx ? p.date : mx, '') || undefined;
-        if (sched.paidAmount >= sched.amount) sched.status = '완료';
-        else if (sched.paidAmount > 0) sched.status = '부분납';
-        dirty.set(working.id, working);
-        added += 1;
+        paymentDirty.set(working.id, working);
+        paymentsAdded += 1;
       }
-      append(`결제 매칭: 추가 ${added}건 / 이미존재 ${alreadyHad}건 / 미매칭 ${unmatched}건`);
+      append(`결제 매칭: 추가 ${paymentsAdded}건 / 미매칭 ${unmatched}건`);
 
-      // ─── 3. 캐시 재계산 + DB 일괄 저장 ───
-      if (dirty.size > 0) {
-        const updateBatch: Record<string, Contract> = {};
-        for (const c of dirty.values()) {
-          const ss = c.schedules ?? [];
-          const unpaid = ss.reduce((sum, s) => {
-            if (s.status === '연체') return sum + s.amount;
-            if (s.status === '부분납') return sum + Math.max(0, s.amount - s.paidAmount);
-            return sum;
-          }, 0);
-          const seqCount = ss.filter((s) => s.status === '연체' || s.status === '부분납').length;
-          const overdue = ss.filter((s) => s.status === '연체' || s.status === '부분납').sort((a, b) => a.seq - b.seq);
-          const currentSeq = overdue[0]?.seq ?? ss.find((s) => s.status === '예정')?.seq ?? ss.length;
-          const last = ss.flatMap((s) => s.payments ?? []).sort((a, b) => b.date.localeCompare(a.date))[0];
-          updateBatch[c.id] = pruneUndefined({
-            ...c,
-            unpaidAmount: unpaid,
-            unpaidSeqCount: seqCount,
-            currentSeq,
-            lastPaidDate: last?.date,
-            lastPaidAmount: last?.amount,
-          });
+      // ─── 4. 정산 entry 제거 + 캐시 재계산 ───
+      let settlementsRemoved = 0;
+      const allDirty = new Map<string, Contract>(paymentDirty);
+      // writeBatch에 이미 있는 contract도 schedule cleanup
+      for (const [id, v] of Object.entries(writeBatch)) {
+        if (v === null) continue;
+        if (allDirty.has(id)) continue;
+        if (v) allDirty.set(id, v as Contract);
+      }
+
+      for (const c of allDirty.values()) {
+        const ss = c.schedules ?? [];
+        let modified = false;
+        for (const s of ss) {
+          const realCount = (s.payments ?? []).filter((p) => p.source !== '정산').length;
+          if (realCount > 0) {
+            const before = s.payments?.length ?? 0;
+            s.payments = (s.payments ?? []).filter((p) => p.source !== '정산');
+            const after = s.payments?.length ?? 0;
+            if (before !== after) {
+              settlementsRemoved += before - after;
+              modified = true;
+            }
+          }
+          // status / paidAmount / paidAt 재계산
+          const paid = (s.payments ?? []).reduce((sum, p) => sum + p.amount, 0);
+          const lastDate = (s.payments ?? []).reduce<string>((mx, p) => p.date > mx ? p.date : mx, '');
+          s.paidAmount = paid;
+          s.paidAt = lastDate || undefined;
+          if (s.status !== '면제') {
+            if (paid >= s.amount) s.status = '완료';
+            else if (paid > 0) s.status = '부분납';
+            // 그 외는 read 시 recalcContract가 처리
+          }
         }
-        await rtdbUpdate(ref(db, icarPath('contracts')), updateBatch as unknown as Record<string, unknown>);
-        append(`✓ 계약 ${dirty.size}건 결제이력 갱신 완료`);
+        // 계약 캐시
+        const unpaid = ss.reduce((sum, s) => {
+          if (s.status === '연체') return sum + s.amount;
+          if (s.status === '부분납') return sum + Math.max(0, s.amount - s.paidAmount);
+          return sum;
+        }, 0);
+        const seqCount = ss.filter((s) => s.status === '연체' || s.status === '부분납').length;
+        const overdue = ss.filter((s) => s.status === '연체' || s.status === '부분납').sort((a, b) => a.seq - b.seq);
+        const currentSeq = overdue[0]?.seq ?? ss.find((s) => s.status === '예정')?.seq ?? ss.length;
+        const last = ss.flatMap((sc) => sc.payments ?? []).sort((a, b) => b.date.localeCompare(a.date))[0];
+        const finalContract = {
+          ...c,
+          schedules: ss,
+          unpaidAmount: unpaid,
+          unpaidSeqCount: seqCount,
+          currentSeq,
+          lastPaidDate: last?.date,
+          lastPaidAmount: last?.amount,
+        };
+        writeBatch[c.id] = pruneUndefined(finalContract);
+        void modified;
       }
 
-      setStats({
-        contractsCreated: createdCount,
-        contractsSkipped: skippedDup,
-        paymentsAdded: added,
-        paymentsSkipped: alreadyHad,
-        unmatched,
-      });
-      toast.success(`마이그레이션 완료 — 계약 ${createdCount} / 결제 ${added}`);
+      // ─── 5. DB 일괄 적용 (null = 삭제) ───
+      append(`DB 일괄 적용 중... (${Object.keys(writeBatch).length}건)`);
+      const updateOnly: Record<string, unknown> = {};
+      const removeIds: string[] = [];
+      for (const [id, v] of Object.entries(writeBatch)) {
+        if (v === null) removeIds.push(id);
+        else updateOnly[id] = v;
+      }
+      if (Object.keys(updateOnly).length > 0) {
+        await rtdbUpdate(ref(db, icarPath('contracts')), updateOnly);
+      }
+      for (const id of removeIds) {
+        await rtdbRemove(ref(db, `${icarPath('contracts')}/${id}`));
+      }
+
+      append(`✓ 정산 entry 제거: ${settlementsRemoved}개`);
       append('🎉 전체 완료. 운영현황으로 이동해서 결과 확인하세요.');
+      setStats({
+        contractsCreated, contractsDeleted, contractsCompanyFixed,
+        paymentsAdded, settlementsRemoved, unmatched,
+      });
+      toast.success(`완료 — 계약 ${contractsCreated}신규/${contractsDeleted}삭제 · 결제 ${paymentsAdded}`);
     } catch (e) {
       append(`❌ 오류: ${friendlyError(e)}`);
       toast.error(friendlyError(e));
@@ -293,7 +397,7 @@ export default function MigrateSheetPage() {
                 시트 마이그레이션
               </h1>
               <div className="page-header-title-sub">
-                스위치플랜 사업현황 시트 → Firebase RTDB (관리자 전용 · 한 번에 처리)
+                스위치플랜 사업현황 시트 → Firebase RTDB · 중복 자동 정리
               </div>
             </div>
           </header>
@@ -337,13 +441,14 @@ export default function MigrateSheetPage() {
                 onClick={runFullMigration}
                 style={{ height: 44, fontSize: 14, fontWeight: 600 }}
               >
-                <Upload weight="bold" size={16} /> 전체 import 실행 (계약 + 결제 한 번에)
+                <Upload weight="bold" size={16} /> 전체 import + 중복 정리
               </button>
               <div style={{ fontSize: 11, color: 'var(--text-weak)', lineHeight: 1.6 }}>
-                ✓ 기존 계약 중복(차량번호+계약일+이름)은 자동 skip<br />
-                ✓ 결제는 차량번호로 매칭 → 결제일자로 회차 추정 → schedules.payments에 추가<br />
-                ✓ 'spillover/스냅샷 자동 정리' (정산) entry 는 실 입금으로 자동 대체<br />
-                ✓ 모든 캐시 (미수금/회차/최근결제) 자동 재계산
+                ✓ (차량+고객) 기준 중복 발견 시 실 입금 많은 쪽 keeper → 나머지 삭제 + 입금 이전<br />
+                ✓ 회사명 잘못된 것 (예: '아이카'로 잘못 박힘) → 시드값으로 자동 보정<br />
+                ✓ contractDate / 월대여료 / 보증금 / paymentDay → 시드 기준으로 keeper 갱신<br />
+                ✓ '스냅샷 자동 정리' (정산) entry → 실 입금 있는 회차에서 자동 제거<br />
+                ✓ 캐시 (미수금/회차/최근결제) 모두 자동 재계산
               </div>
             </div>
           </section>
@@ -359,19 +464,28 @@ export default function MigrateSheetPage() {
                   <div>
                     <div style={{ color: 'var(--text-weak)', fontSize: 11 }}>신규 계약</div>
                     <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--green-text)' }}>{stats.contractsCreated}</div>
-                    <div style={{ fontSize: 10, color: 'var(--text-sub)' }}>중복 skip: {stats.contractsSkipped}</div>
                   </div>
                   <div>
-                    <div style={{ color: 'var(--text-weak)', fontSize: 11 }}>결제 매칭</div>
+                    <div style={{ color: 'var(--text-weak)', fontSize: 11 }}>중복 삭제</div>
+                    <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--orange-text)' }}>{stats.contractsDeleted}</div>
+                  </div>
+                  <div>
+                    <div style={{ color: 'var(--text-weak)', fontSize: 11 }}>회사 보정</div>
+                    <div style={{ fontSize: 18, fontWeight: 600 }}>{stats.contractsCompanyFixed}</div>
+                  </div>
+                  <div>
+                    <div style={{ color: 'var(--text-weak)', fontSize: 11 }}>결제 추가</div>
                     <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--green-text)' }}>{stats.paymentsAdded}</div>
-                    <div style={{ fontSize: 10, color: 'var(--text-sub)' }}>이미있음: {stats.paymentsSkipped}</div>
+                  </div>
+                  <div>
+                    <div style={{ color: 'var(--text-weak)', fontSize: 11 }}>정산 제거</div>
+                    <div style={{ fontSize: 18, fontWeight: 600 }}>{stats.settlementsRemoved}</div>
                   </div>
                   <div>
                     <div style={{ color: 'var(--text-weak)', fontSize: 11 }}>미매칭</div>
                     <div style={{ fontSize: 18, fontWeight: 600, color: stats.unmatched > 0 ? 'var(--red-text)' : 'var(--text-sub)' }}>
                       {stats.unmatched}
                     </div>
-                    <div style={{ fontSize: 10, color: 'var(--text-sub)' }}>차량 미등록</div>
                   </div>
                 </div>
               </div>
