@@ -79,6 +79,41 @@ export default function MigrateSheetPage() {
     setLog((l) => [...l, `[${new Date().toLocaleTimeString('ko-KR')}] ${line}`]);
   }
 
+  /** 초강력 위험: 모든 contract 일괄 삭제 (clean slate) */
+  async function wipeAllContracts() {
+    if (!superAdmin) { toast.error('관리자만 실행 가능합니다'); return; }
+    setRunning(true);
+    setLog([]);
+    try {
+      await ensureAuth();
+      const db = getRtdb();
+      if (!db) throw new Error('Firebase 미설정');
+
+      append('현재 DB 조회 중...');
+      const snap = await get(ref(db, icarPath('contracts')));
+      const existing: Record<string, Contract> = snap.val() ?? {};
+      const all = Object.values(existing);
+      append(`전체 계약: ${all.length}건`);
+
+      if (all.length === 0) {
+        toast.warning('삭제할 계약 없음');
+        return;
+      }
+      if (!window.confirm(`⚠️ 전체 계약 ${all.length}건을 영구 삭제합니다. (수납이력 모두 함께 삭제)\n진행하시겠습니까?`)) return;
+      if (!window.confirm(`정말로? 마지막 확인 — ${all.length}건 모두 삭제`)) return;
+
+      append('전체 계약 노드 삭제 중...');
+      await rtdbRemove(ref(db, icarPath('contracts')));
+      append(`✓ 계약 ${all.length}건 삭제 완료 (clean slate)`);
+      toast.success(`전체 계약 ${all.length}건 삭제 완료`);
+    } catch (e) {
+      append(`✗ 실패: ${friendlyError(e)}`);
+      toast.error(friendlyError(e));
+    } finally {
+      setRunning(false);
+    }
+  }
+
   /** 위험: company === '아이카' 인 contract 일괄 삭제 */
   async function deleteAllIcar() {
     if (!superAdmin) { toast.error('관리자만 실행 가능합니다'); return; }
@@ -583,6 +618,15 @@ export default function MigrateSheetPage() {
                 style={{ height: 40, fontSize: 13 }}
               >
                 <Warning weight="bold" size={14} /> 회사='아이카' 계약 일괄 삭제 (잘못 박힌 것)
+              </button>
+              <button
+                className="btn btn-danger"
+                type="button"
+                disabled={running || !superAdmin}
+                onClick={wipeAllContracts}
+                style={{ height: 40, fontSize: 13, background: '#7F1D1D', color: '#fff' }}
+              >
+                <Warning weight="bold" size={14} /> ☢ 전체 계약 wipe (clean slate)
               </button>
               <div style={{ fontSize: 11, color: 'var(--text-weak)', lineHeight: 1.6 }}>
                 ✓ (차량+고객) 기준 중복 발견 시 실 입금 많은 쪽 keeper → 나머지 삭제 + 입금 이전<br />
