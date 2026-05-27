@@ -79,34 +79,64 @@ export default function MigrateSheetPage() {
     setLog((l) => [...l, `[${new Date().toLocaleTimeString('ko-KR')}] ${line}`]);
   }
 
-  /** 진단 — 현재 icar001 노드 상태 출력 (어디 데이터 있는지 확인) */
+  /** 진단 — Firebase 프로젝트 정보 + icar001 노드 상태 전체 출력 */
   async function diagnose() {
     if (!superAdmin) { toast.error('관리자만 실행 가능합니다'); return; }
     setRunning(true);
     setLog([]);
     try {
+      // 1) 현재 연결된 Firebase 프로젝트
+      append('═══ Firebase 연결 정보 ═══');
+      append(`projectId: ${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || '(미설정)'}`);
+      append(`databaseURL: ${process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL || '(미설정)'}`);
+      append(`authDomain: ${process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || '(미설정)'}`);
+
       await ensureAuth();
       const db = getRtdb();
       if (!db) throw new Error('Firebase 미설정');
+      append(`auth user: ${user?.email ?? '(미로그인)'}`);
+      append(`super admin: ${superAdmin ? 'YES' : 'NO'}`);
 
-      append('icar001 root 노드 조회 중...');
+      // 2) root 노드 자식 카운트
+      append('═══ icar001 root 자식 노드 ═══');
       const rootSnap = await get(ref(db, 'icar001'));
       const root = rootSnap.val() ?? {};
-      append(`icar001 root 자식 노드:`);
-      for (const [key, val] of Object.entries(root)) {
-        const count = val && typeof val === 'object' ? Object.keys(val).length : 0;
-        append(`  · ${key}: ${count}건`);
+      if (Object.keys(root).length === 0) {
+        append('  (root 비어있음)');
+      } else {
+        for (const [key, val] of Object.entries(root)) {
+          const count = val && typeof val === 'object' ? Object.keys(val).length : 0;
+          append(`  · ${key}: ${count}건`);
+        }
       }
 
-      append('---');
-      append('vehicles 상세:');
+      // 3) vehicles 노드 상세
+      append('═══ vehicles 상세 (앞 40대) ═══');
       const vSnap = await get(ref(db, icarPath('vehicles')));
       const vehicles = vSnap.val() ?? {};
-      const vList = Object.values(vehicles) as Array<{ plate?: string; company?: string; status?: string; notes?: string }>;
-      for (const v of vList.slice(0, 30)) {
-        append(`  · ${v.plate} | ${v.company} | ${v.status} | ${v.notes ?? ''}`);
+      const vList = Object.entries(vehicles) as Array<[string, { plate?: string; company?: string; status?: string; notes?: string }]>;
+      append(`총 ${vList.length}대`);
+      for (const [id, v] of vList.slice(0, 40)) {
+        append(`  · ${id} | ${v.plate} | ${v.company} | ${v.status} | ${(v.notes ?? '').slice(0, 30)}`);
       }
-      if (vList.length > 30) append(`  ... 외 ${vList.length - 30}대`);
+      if (vList.length > 40) append(`  ... 외 ${vList.length - 40}대`);
+
+      // 4) contracts 노드 상세 (회사='스위치플랜' 같은 의심 케이스)
+      append('═══ contracts 상세 (앞 40건) ═══');
+      const cSnap = await get(ref(db, icarPath('contracts')));
+      const contracts = cSnap.val() ?? {};
+      const cList = Object.entries(contracts) as Array<[string, { vehiclePlate?: string; customerName?: string; company?: string; notes?: string }]>;
+      append(`총 ${cList.length}건`);
+      for (const [id, c] of cList.slice(0, 40)) {
+        append(`  · ${id} | ${c.vehiclePlate} | ${c.customerName || '(고객없음)'} | ${c.company} | ${(c.notes ?? '').slice(0, 30)}`);
+      }
+      if (cList.length > 40) append(`  ... 외 ${cList.length - 40}건`);
+
+      append('═══ 진단 완료 ═══');
+      append('판단 가이드:');
+      append('  - vehicles 24대 보임 → 그게 운영현황 24건의 정체. wipe 버튼이 못 지웠다면 Rules 문제');
+      append('  - vehicles/contracts 0건인데 화면엔 24건 → 브라우저 캐시 (Ctrl+Shift+R)');
+      append('  - 그 외 노드(snapshots, vehicleMaster 등)에 들어있으면 알려주세요');
     } catch (e) {
       append(`✗ 실패: ${friendlyError(e)}`);
     } finally {
@@ -137,7 +167,7 @@ export default function MigrateSheetPage() {
     }
   }
 
-  /** 초강력 위험: 모든 contract + vehicle 일괄 삭제 (clean slate) */
+  /** 초강력 위험: 모든 contract + vehicle 일괄 삭제 + 검증 */
   async function wipeAllContracts() {
     if (!superAdmin) { toast.error('관리자만 실행 가능합니다'); return; }
     setRunning(true);
@@ -147,32 +177,76 @@ export default function MigrateSheetPage() {
       const db = getRtdb();
       if (!db) throw new Error('Firebase 미설정');
 
-      append('현재 DB 조회 중...');
+      // ── 1) 삭제 전 진단: icar001 root 전체 상태 ──
+      append('═══ 삭제 전 진단 ═══');
+      const rootSnap = await get(ref(db, 'icar001'));
+      const root = rootSnap.val() ?? {};
+      append(`icar001 root 자식 노드:`);
+      for (const [key, val] of Object.entries(root)) {
+        const count = val && typeof val === 'object' ? Object.keys(val).length : 0;
+        append(`  · ${key}: ${count}건`);
+      }
+
       const cSnap = await get(ref(db, icarPath('contracts')));
       const vSnap = await get(ref(db, icarPath('vehicles')));
-      const cAll = Object.values(cSnap.val() ?? {});
-      const vAll = Object.values(vSnap.val() ?? {});
-      append(`전체 계약: ${cAll.length}건 / 차량: ${vAll.length}대`);
+      const cAll = Object.values(cSnap.val() ?? {}) as Array<{ vehiclePlate?: string; customerName?: string; company?: string }>;
+      const vAll = Object.values(vSnap.val() ?? {}) as Array<{ plate?: string; company?: string; status?: string; notes?: string }>;
+      append(`contracts: ${cAll.length}건 / vehicles: ${vAll.length}대`);
+
+      // vehicles 상세 (24건 정체 확인)
+      append('vehicles 샘플 (앞 30대):');
+      for (const v of vAll.slice(0, 30)) {
+        append(`  · ${v.plate} | ${v.company} | ${v.status} | ${v.notes ?? ''}`);
+      }
 
       if (cAll.length === 0 && vAll.length === 0) {
+        append('이미 비어있음. 그런데 화면에 24건이 보인다면:');
+        append('  1) 브라우저 강제 새로고침 (Ctrl+Shift+R)');
+        append('  2) Firebase 프로젝트가 다른 곳을 가리킬 수 있음 — .env 확인');
         toast.warning('삭제할 데이터 없음');
         return;
       }
-      if (!window.confirm(`⚠️ 전체 계약 ${cAll.length}건 + 차량 ${vAll.length}대를 영구 삭제합니다.\n(수납이력 모두 함께 삭제)\n진행하시겠습니까?`)) return;
-      if (!window.confirm(`정말로? 마지막 확인 — 계약 ${cAll.length} + 차량 ${vAll.length} 모두 삭제`)) return;
 
+      if (!window.confirm(`⚠️ contracts ${cAll.length}건 + vehicles ${vAll.length}대 영구 삭제. 진행?`)) return;
+      if (!window.confirm(`정말로? 마지막 확인`)) return;
+
+      // ── 2) 삭제 ──
+      append('═══ 삭제 실행 ═══');
       append('contracts 노드 삭제 중...');
-      await rtdbRemove(ref(db, icarPath('contracts')));
-      append(`✓ 계약 ${cAll.length}건 삭제`);
+      try {
+        await rtdbRemove(ref(db, icarPath('contracts')));
+        append(`✓ contracts 삭제 성공`);
+      } catch (e) {
+        append(`✗ contracts 삭제 실패: ${friendlyError(e)}`);
+      }
 
       append('vehicles 노드 삭제 중...');
-      await rtdbRemove(ref(db, icarPath('vehicles')));
-      append(`✓ 차량 ${vAll.length}대 삭제`);
+      try {
+        await rtdbRemove(ref(db, icarPath('vehicles')));
+        append(`✓ vehicles 삭제 성공`);
+      } catch (e) {
+        append(`✗ vehicles 삭제 실패: ${friendlyError(e)}`);
+        append(`  → Rules가 막을 가능성. Firebase Console에서 직접 삭제 필요`);
+      }
 
-      append(`🎉 clean slate 완료 — 운영현황 새로고침하면 0건으로 보일 거예요`);
-      toast.success(`전체 wipe 완료 (계약 ${cAll.length} + 차량 ${vAll.length})`);
+      // ── 3) 삭제 후 검증 ──
+      append('═══ 삭제 후 재조회 (실제 지워졌는지 검증) ═══');
+      const cSnap2 = await get(ref(db, icarPath('contracts')));
+      const vSnap2 = await get(ref(db, icarPath('vehicles')));
+      const cAfter = Object.keys(cSnap2.val() ?? {}).length;
+      const vAfter = Object.keys(vSnap2.val() ?? {}).length;
+      append(`삭제 후 — contracts: ${cAfter}건 / vehicles: ${vAfter}대`);
+
+      if (cAfter === 0 && vAfter === 0) {
+        append(`🎉 DB 완전 삭제 확인. 화면에 아직 보이면 Ctrl+Shift+R로 강제새로고침`);
+        toast.success(`DB wipe 성공 — 화면 새로고침 필요`);
+      } else {
+        append(`⚠️ DB에 아직 데이터 남음 — Rules 또는 권한 문제 의심`);
+        append(`해결: Firebase Console → Realtime Database → icar001 노드 직접 삭제`);
+        toast.error(`삭제 완료 메시지 떴지만 실제 ${cAfter + vAfter}건 남음 — Rules 문제`);
+      }
     } catch (e) {
-      append(`✗ 실패: ${friendlyError(e)}`);
+      append(`✗ 전체 실패: ${friendlyError(e)}`);
       toast.error(friendlyError(e));
     } finally {
       setRunning(false);
