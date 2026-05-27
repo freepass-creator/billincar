@@ -955,6 +955,7 @@ export default function Page() {
         open={detailOpen}
         onOpenChange={setDetailOpen}
         onUpdate={updateContract}
+        onNavigate={(contractId) => setSelectedId(contractId)}
       />
       <CreateDialog open={createOpen} onOpenChange={setCreateOpen} />
       <SmsDialog open={smsOpen} onOpenChange={setSmsOpen} contracts={filteredContracts} selectedIds={selectedIds} />

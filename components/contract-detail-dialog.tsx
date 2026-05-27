@@ -29,11 +29,14 @@ export function ContractDetailDialog({
   open,
   onOpenChange,
   onUpdate,
+  onNavigate,
 }: {
   contract: Contract | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onUpdate: (updated: Contract) => void;
+  /** 같은 차량의 다른 계약으로 점프 (계약이력에서 클릭 시) */
+  onNavigate?: (contractId: string) => void;
 }) {
   if (!contract) return null;
 
@@ -65,8 +68,8 @@ export function ContractDetailDialog({
               <Tabs.Content value="payment"><PaymentTab c={contract} onUpdate={onUpdate} /></Tabs.Content>
               <Tabs.Content value="vehiclePayments"><VehiclePaymentsTab c={contract} /></Tabs.Content>
               <Tabs.Content value="documents"><DocumentsTab c={contract} onUpdate={onUpdate} /></Tabs.Content>
-              <Tabs.Content value="vehicleHistory"><HistoryListTab scope="vehicle" c={contract} /></Tabs.Content>
-              <Tabs.Content value="contractHistory"><HistoryListTab scope="contract" c={contract} /></Tabs.Content>
+              <Tabs.Content value="vehicleHistory"><HistoryListTab scope="vehicle" c={contract} onNavigate={onNavigate} /></Tabs.Content>
+              <Tabs.Content value="contractHistory"><HistoryListTab scope="contract" c={contract} onNavigate={onNavigate} /></Tabs.Content>
             </div>
           </Tabs.Root>
         </DialogBody>
@@ -1752,7 +1755,7 @@ function ScheduleTable({ c, onUpdate }: { c: Contract; onUpdate: (u: Contract) =
   );
 }
 
-function HistoryListTab({ scope, c }: { scope: 'contract' | 'vehicle'; c: Contract }) {
+function HistoryListTab({ scope, c, onNavigate }: { scope: 'contract' | 'vehicle'; c: Contract; onNavigate?: (contractId: string) => void }) {
   const { contracts } = useContractsList();
   const { entries, remove: removeEntry } = useHistoryEntries();
   const [addOpen, setAddOpen] = useState(false);
@@ -1811,11 +1814,59 @@ function HistoryListTab({ scope, c }: { scope: 'contract' | 'vehicle'; c: Contra
               <tbody>
                 {allVehicleContracts.map((p) => {
                   const isCurrent = p.id === c.id;
+                  // 계약자 옆 링크 — 면허번호 있으면 면허 표시, 계약서 발송했으면 계약서 표시
+                  const hasLicense = !!p.customerLicenseNo;
+                  const hasDocument = !!p.documentStatus && p.documentStatus !== '미발송';
                   return (
                     <tr key={p.id} style={isCurrent ? { background: 'var(--brand-bg)', fontWeight: 500 } : undefined}>
                       <td>
-                        {isCurrent && <span style={{ color: 'var(--brand)', marginRight: 4 }}>●</span>}
-                        {p.customerName || <span className="dim">(휴차)</span>}
+                        {p.customerName ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            {isCurrent ? (
+                              <span style={{ color: 'var(--brand)', fontWeight: 600 }}>
+                                ● {p.customerName} <span className="dim" style={{ fontWeight: 400, fontSize: 10 }}>(현재)</span>
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => onNavigate?.(p.id)}
+                                title="이 계약 상세로 이동"
+                                style={{
+                                  background: 'transparent', border: 0, padding: 0, cursor: onNavigate ? 'pointer' : 'default',
+                                  color: 'var(--brand)', textDecoration: 'underline', textUnderlineOffset: 3,
+                                  fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 500,
+                                }}
+                              >
+                                {p.customerName}
+                              </button>
+                            )}
+                            {/* 면허·계약서 링크 칩 */}
+                            {hasLicense && (
+                              <span
+                                className="chip"
+                                title={`면허번호 ${p.customerLicenseNo}${p.customerLicenseStatus ? ` (${p.customerLicenseStatus})` : ''}`}
+                                style={{
+                                  height: 14, padding: '0 4px', fontSize: 9, fontWeight: 500,
+                                  background: p.customerLicenseStatus === '정상' ? 'var(--green-bg)' : 'var(--bg-sunken)',
+                                  color: p.customerLicenseStatus === '정상' ? 'var(--green-text)' : 'var(--text-sub)',
+                                }}
+                              >면허</span>
+                            )}
+                            {hasDocument && (
+                              <span
+                                className="chip"
+                                title={`계약서 ${p.documentStatus}${p.documentSentAt ? ` (${p.documentSentAt.slice(0, 10)})` : ''}`}
+                                style={{
+                                  height: 14, padding: '0 4px', fontSize: 9, fontWeight: 500,
+                                  background: p.documentStatus === '서명완료' ? 'var(--green-bg)' : 'var(--blue-bg)',
+                                  color: p.documentStatus === '서명완료' ? 'var(--green-text)' : 'var(--blue-text)',
+                                }}
+                              >계약서</span>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="dim">(휴차)</span>
+                        )}
                       </td>
                       <td className="mono">{formatDateFull(p.contractDate)}</td>
                       <td className="mono dim">{formatDateFull(p.returnScheduledDate) || '-'}</td>
