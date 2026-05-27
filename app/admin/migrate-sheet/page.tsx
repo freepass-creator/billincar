@@ -79,6 +79,64 @@ export default function MigrateSheetPage() {
     setLog((l) => [...l, `[${new Date().toLocaleTimeString('ko-KR')}] ${line}`]);
   }
 
+  /** 진단 — 현재 icar001 노드 상태 출력 (어디 데이터 있는지 확인) */
+  async function diagnose() {
+    if (!superAdmin) { toast.error('관리자만 실행 가능합니다'); return; }
+    setRunning(true);
+    setLog([]);
+    try {
+      await ensureAuth();
+      const db = getRtdb();
+      if (!db) throw new Error('Firebase 미설정');
+
+      append('icar001 root 노드 조회 중...');
+      const rootSnap = await get(ref(db, 'icar001'));
+      const root = rootSnap.val() ?? {};
+      append(`icar001 root 자식 노드:`);
+      for (const [key, val] of Object.entries(root)) {
+        const count = val && typeof val === 'object' ? Object.keys(val).length : 0;
+        append(`  · ${key}: ${count}건`);
+      }
+
+      append('---');
+      append('vehicles 상세:');
+      const vSnap = await get(ref(db, icarPath('vehicles')));
+      const vehicles = vSnap.val() ?? {};
+      const vList = Object.values(vehicles) as Array<{ plate?: string; company?: string; status?: string; notes?: string }>;
+      for (const v of vList.slice(0, 30)) {
+        append(`  · ${v.plate} | ${v.company} | ${v.status} | ${v.notes ?? ''}`);
+      }
+      if (vList.length > 30) append(`  ... 외 ${vList.length - 30}대`);
+    } catch (e) {
+      append(`✗ 실패: ${friendlyError(e)}`);
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  /** 강제 wipe — icar001 root 통째로 삭제 (companies/audit_logs 포함 모든 것) */
+  async function nukeEverything() {
+    if (!superAdmin) { toast.error('관리자만 실행 가능합니다'); return; }
+    if (!window.confirm('☢☢☢ 핵 wipe — icar001 root 노드 전체 삭제\n\ncompanies/audit_logs 포함 모든 데이터 사라집니다.\n진행할까요?')) return;
+    if (!window.confirm('정말로? icar001 노드 전체 삭제')) return;
+    setRunning(true);
+    setLog([]);
+    try {
+      await ensureAuth();
+      const db = getRtdb();
+      if (!db) throw new Error('Firebase 미설정');
+      append('icar001 root 삭제 중...');
+      await rtdbRemove(ref(db, 'icar001'));
+      append('✓ icar001 root 통째로 삭제 완료');
+      toast.success('icar001 전체 삭제 완료');
+    } catch (e) {
+      append(`✗ 실패: ${friendlyError(e)}`);
+      toast.error(friendlyError(e));
+    } finally {
+      setRunning(false);
+    }
+  }
+
   /** 초강력 위험: 모든 contract + vehicle 일괄 삭제 (clean slate) */
   async function wipeAllContracts() {
     if (!superAdmin) { toast.error('관리자만 실행 가능합니다'); return; }
@@ -634,6 +692,24 @@ export default function MigrateSheetPage() {
                 style={{ height: 40, fontSize: 13, background: '#7F1D1D', color: '#fff' }}
               >
                 <Warning weight="bold" size={14} /> ☢ 전체 계약 + 차량 wipe (clean slate)
+              </button>
+              <button
+                className="btn"
+                type="button"
+                disabled={running || !superAdmin}
+                onClick={diagnose}
+                style={{ height: 36, fontSize: 12 }}
+              >
+                🔍 진단 — 현재 노드 상태 확인 (어디 데이터 있는지)
+              </button>
+              <button
+                className="btn btn-danger"
+                type="button"
+                disabled={running || !superAdmin}
+                onClick={nukeEverything}
+                style={{ height: 36, fontSize: 12, background: '#450A0A', color: '#fff' }}
+              >
+                ☢☢☢ 핵 wipe — icar001 root 통째로 삭제 (최후의 수단)
               </button>
               <div style={{ fontSize: 11, color: 'var(--text-weak)', lineHeight: 1.6 }}>
                 ✓ (차량+고객) 기준 중복 발견 시 실 입금 많은 쪽 keeper → 나머지 삭제 + 입금 이전<br />
