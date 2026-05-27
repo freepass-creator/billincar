@@ -187,11 +187,15 @@ export function CreateDialog({
   async function commitHorizontalSheet(sheet: ParsedSheet) {
     setBusy(true);
     try {
+      // rawAoa 직접 사용 — sheet.headers 는 dropIdx 적용된 상태라 row 인덱스와 안 맞음
+      const rawHeaders = (sheet.rawAoa[sheet.headerRow] || []).map((v) =>
+        v == null || v === '' ? '' : String(v).trim().replace(/\s*\*\s*$/, '').trim()
+      );
       const all: Array<Omit<Contract, 'id'>> = [];
       const dataRows = sheet.rawAoa.slice(sheet.headerRow + 1);
       for (const row of dataRows) {
         if (!row || row.every((v) => v == null || String(v).trim() === '')) continue;
-        const result = parseHorizontalContractsRow(sheet.headers, row, companies);
+        const result = parseHorizontalContractsRow(rawHeaders, row, companies);
         if (!result || result.contracts.length === 0) continue;
         for (const patch of result.contracts) {
           const out = applySnapshotToContract(undefined, patch);  // 가로확장은 무조건 신규 (각 계약이 별건)
@@ -220,6 +224,10 @@ export function CreateDialog({
   async function commitHorizontalReceivables(sheet: ParsedSheet) {
     setBusy(true);
     try {
+      // rawAoa + rawHeaders 사용 (인덱스 정합)
+      const rawHeaders = (sheet.rawAoa[sheet.headerRow] || []).map((v) =>
+        v == null || v === '' ? '' : String(v).trim().replace(/\s*\*\s*$/, '').trim()
+      );
       const dataRows = sheet.rawAoa.slice(sheet.headerRow + 1);
       const byPlate = new Map(contracts.map((c) => [c.vehiclePlate.trim(), c]));
       const updates: Contract[] = [];
@@ -229,7 +237,7 @@ export function CreateDialog({
 
       for (const row of dataRows) {
         if (!row || row.every((v) => v == null || String(v).trim() === '')) continue;
-        const parsed = parseReceivablesRow(sheet.headers, row);
+        const parsed = parseReceivablesRow(rawHeaders, row);
         if (!parsed || parsed.payments.length === 0) continue;
 
         // 매칭 — 차량번호 + (가능하면 contractDate 일치)
@@ -1279,15 +1287,21 @@ function SnapshotPane({
     setSheets((prev) => [...prev, ...out]);
   }, []);
 
+  // rawAoa 기반 헤더 — dropIdx 적용 안 됨 (가로확장 인덱스 정합)
+  function rawHeadersOf(s: ParsedSheet): string[] {
+    return (s.rawAoa[s.headerRow] || []).map((v) =>
+      v == null || v === '' ? '' : String(v).trim().replace(/\s*\*\s*$/, '').trim()
+    );
+  }
   // 가로확장 다중계약 시트 자동감지 (계약탭)
   const horizontalSheets = useMemo(
-    () => sheets.filter((s) => isHorizontalMultiContractSheet(s.headers)),
+    () => sheets.filter((s) => isHorizontalMultiContractSheet(rawHeadersOf(s))),
     [sheets],
   );
 
   // 가로확장 채권 시트 자동감지 (채권탭)
   const receivablesSheets = useMemo(
-    () => sheets.filter((s) => isHorizontalReceivablesSheet(s.headers)),
+    () => sheets.filter((s) => isHorizontalReceivablesSheet(rawHeadersOf(s))),
     [sheets],
   );
 
@@ -1445,7 +1459,11 @@ function SnapshotPane({
 
       {/* 가로확장 import — 자동감지 / 수동강제 둘 다 지원 */}
       {sheets.length > 0 && onCommitHorizontal && sheets.map((s, i) => {
-        const diag = diagnoseHorizontalSheet(s.headers);
+        // 진단·import 모두 rawAoa 헤더 기준 (dropIdx 적용 안 함 — row 인덱스 정합)
+        const rawHeadersForDiag = (s.rawAoa[s.headerRow] || []).map((v) =>
+          v == null || v === '' ? '' : String(v).trim().replace(/\s*\*\s*$/, '').trim()
+        );
+        const diag = diagnoseHorizontalSheet(rawHeadersForDiag);
         const isAutoDetected = horizontalSheets.includes(s);
         const canImport = !!diag.vehiclePlateCol;  // 차량번호만 있으면 시도 가능
         return (
@@ -1496,9 +1514,9 @@ function SnapshotPane({
             </div>
             {/* 전체 헤더 보기 — 매칭 안 잡힌 케이스 디버깅 */}
             <details style={{ fontSize: 11, color: 'var(--text-weak)' }}>
-              <summary style={{ cursor: 'pointer' }}>전체 헤더 ({s.headers.length}개) 보기</summary>
+              <summary style={{ cursor: 'pointer' }}>전체 헤더 ({rawHeadersForDiag.length}개) 보기</summary>
               <div className="mono" style={{ fontSize: 10, padding: 6, background: 'var(--bg-card)', marginTop: 4, borderRadius: 4, wordBreak: 'break-all' }}>
-                {s.headers.map((h, idx) => `${idx + 1}.${h}`).join(' | ')}
+                {rawHeadersForDiag.map((h, idx) => `${idx + 1}.${h || '(빈)'}`).join(' | ')}
               </div>
             </details>
           </div>
