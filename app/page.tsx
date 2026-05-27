@@ -13,6 +13,7 @@ import {
 import { formatCurrency, formatDate, daysSince, shortDate, dateWithDow, formatRemainingHuman } from '@/lib/utils';
 import type { Contract } from '@/lib/types';
 import { useContracts } from '@/lib/firebase/contracts-store';
+import { useVehicles } from '@/lib/firebase/vehicles-store';
 import { useCompanies } from '@/lib/firebase/companies-store';
 import { displayCompanyName } from '@/lib/company-display';
 import { downloadContractsExcel, downloadOverdueExcel } from '@/lib/contract-export';
@@ -294,7 +295,42 @@ export default function Page() {
   });
 
   // Firebase RTDB 실시간 구독 — /icar001/contracts
-  const { contracts, loading: contractsLoading, update: rtdbUpdate, updateMany: rtdbUpdateMany, remove: rtdbRemove } = useContracts();
+  const { contracts: rawContracts, loading: contractsLoading, update: rtdbUpdate, updateMany: rtdbUpdateMany, remove: rtdbRemove } = useContracts();
+  const { vehicles } = useVehicles();
+
+  /**
+   * 운영현황 통합 view — 계약 + 휴차차량(계약 없는 차량 = 휴차중).
+   * 사용자 명시: "계약탭에 계약정보가 없는건 휴차중이라고 보면됨"
+   */
+  const contracts = useMemo<Contract[]>(() => {
+    const contractedPlates = new Set(rawContracts.map((c) => c.vehiclePlate?.trim()).filter(Boolean));
+    const orphans = vehicles
+      .filter((v) => v.plate && !contractedPlates.has(v.plate.trim()))
+      .map<Contract>((v) => ({
+        id: `vehicle-orphan-${v.id}`,
+        contractNo: '',
+        company: v.company,
+        customerName: '',
+        customerPhone1: '',
+        vehiclePlate: v.plate,
+        vehicleModel: v.model,
+        vehicleStatus: v.status === '운행' ? '휴차대기' : v.status,
+        contractDate: v.purchasedDate ?? v.createdAt?.slice(0, 10) ?? '',
+        termMonths: 0,
+        longTerm: false,
+        monthlyRent: 0,
+        deposit: 0,
+        paymentDay: 1,
+        paymentMethod: '이체',
+        status: '대기',
+        currentSeq: 0,
+        totalSeq: 0,
+        unpaidAmount: 0,
+        unpaidSeqCount: 0,
+        notes: v.notes,
+      }));
+    return [...rawContracts, ...orphans];
+  }, [rawContracts, vehicles]);
   const { user } = useAuth();
   const superAdmin = isSuperAdmin(user?.email);
   const { companies: companyMaster } = useCompanies();

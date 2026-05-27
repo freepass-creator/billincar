@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, Fragment } from 'react';
+import { useState, useMemo, Fragment } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import {
   User, Car, FileText, ClipboardText, ArrowsLeftRight, CurrencyKrw,
@@ -51,6 +51,7 @@ export function ContractDetailDialog({
               <Tabs.Trigger value="vehicleSpec" className="tabs-trigger">차량정보</Tabs.Trigger>
               <Tabs.Trigger value="contract" className="tabs-trigger">계약정보</Tabs.Trigger>
               <Tabs.Trigger value="payment" className="tabs-trigger">수납내역</Tabs.Trigger>
+              <Tabs.Trigger value="vehiclePayments" className="tabs-trigger">차량 수납이력</Tabs.Trigger>
               <Tabs.Trigger value="documents" className="tabs-trigger">서류 검증</Tabs.Trigger>
               <Tabs.Trigger value="vehicleHistory" className="tabs-trigger">차량이력</Tabs.Trigger>
               <Tabs.Trigger value="contractHistory" className="tabs-trigger">계약이력</Tabs.Trigger>
@@ -61,6 +62,7 @@ export function ContractDetailDialog({
               <Tabs.Content value="vehicleStatus"><VehicleStatusTab c={contract} onUpdate={onUpdate} /></Tabs.Content>
               <Tabs.Content value="contract"><ContractInfoTab c={contract} /></Tabs.Content>
               <Tabs.Content value="payment"><PaymentTab c={contract} onUpdate={onUpdate} /></Tabs.Content>
+              <Tabs.Content value="vehiclePayments"><VehiclePaymentsTab c={contract} /></Tabs.Content>
               <Tabs.Content value="documents"><DocumentsTab c={contract} onUpdate={onUpdate} /></Tabs.Content>
               <Tabs.Content value="vehicleHistory"><HistoryListTab scope="vehicle" c={contract} /></Tabs.Content>
               <Tabs.Content value="contractHistory"><HistoryListTab scope="contract" c={contract} /></Tabs.Content>
@@ -915,6 +917,190 @@ function ContractInfoTab({ c }: { c: Contract }) {
         <div style={{ fontSize: 12, color: c.notes ? 'var(--text-main)' : 'var(--text-weak)', whiteSpace: 'pre-wrap' }}>
           {c.notes || '메모 없음'}
         </div>
+      </Section>
+    </div>
+  );
+}
+
+/* ─────────────── 차량 수납이력 탭 (채권탭 대응 — 차량번호 기준 통합 입금) ─────────────── */
+
+function VehiclePaymentsTab({ c }: { c: Contract }) {
+  const { contracts: allContracts } = useContractsList();
+
+  // 같은 차량번호의 모든 계약 (현재 계약 포함)
+  const vehicleContracts = useMemo(() => {
+    const plate = c.vehiclePlate?.trim();
+    if (!plate || plate === '미정') return [c];
+    return allContracts
+      .filter((x) => x.vehiclePlate?.trim() === plate)
+      .sort((a, b) => a.contractDate.localeCompare(b.contractDate));
+  }, [allContracts, c]);
+
+  // 모든 payment entry flatten + 계약 정보 부착
+  type Row = {
+    date: string;
+    amount: number;
+    customerName: string;
+    contractDate: string;
+    contractId: string;
+    seq: number;
+    source: PaymentEntry['source'];
+    memo?: string;
+    by?: string;
+  };
+  const rows: Row[] = useMemo(() => {
+    const out: Row[] = [];
+    for (const con of vehicleContracts) {
+      for (const s of con.schedules ?? []) {
+        for (const p of s.payments ?? []) {
+          out.push({
+            date: p.date,
+            amount: p.amount,
+            customerName: con.customerName || '(미정)',
+            contractDate: con.contractDate,
+            contractId: con.id,
+            seq: s.seq,
+            source: p.source,
+            memo: p.memo,
+            by: p.by,
+          });
+        }
+      }
+    }
+    return out.sort((a, b) => b.date.localeCompare(a.date) || a.contractDate.localeCompare(b.contractDate));
+  }, [vehicleContracts]);
+
+  // 통계 — 누적 입금/할인, 계약자별 breakdown
+  const totalPaid = rows.reduce((s, r) => s + r.amount, 0);
+  const totalDiscount = vehicleContracts.reduce(
+    (sum, con) => sum + (con.schedules ?? []).reduce(
+      (d, s) => d + (s.discounts ?? []).reduce((dd, x) => dd + x.amount, 0),
+      0,
+    ),
+    0,
+  );
+  const realIncoming = rows.filter((r) => r.source !== '정산').reduce((s, r) => s + r.amount, 0);
+  const settledAmount = rows.filter((r) => r.source === '정산').reduce((s, r) => s + r.amount, 0);
+
+  // 계약자별 그룹 (시각적 구분용)
+  const customerGroups = useMemo(() => {
+    const m = new Map<string, { name: string; contractDate: string; total: number }>();
+    for (const r of rows) {
+      const key = `${r.customerName}|${r.contractDate}`;
+      const prev = m.get(key) ?? { name: r.customerName, contractDate: r.contractDate, total: 0 };
+      prev.total += r.amount;
+      m.set(key, prev);
+    }
+    return Array.from(m.values()).sort((a, b) => b.contractDate.localeCompare(a.contractDate));
+  }, [rows]);
+
+  // 행 색상 alternation — 계약자 바뀔 때마다 토글
+  const rowTints = useMemo(() => {
+    const map = new Map<string, number>();
+    let idx = 0;
+    let prevKey = '';
+    for (const r of rows) {
+      const key = `${r.customerName}|${r.contractDate}`;
+      if (key !== prevKey) { idx = 1 - idx; prevKey = key; }
+      map.set(`${r.date}-${r.contractId}-${r.seq}`, idx);
+    }
+    return map;
+  }, [rows]);
+
+  return (
+    <div className="detail-stack">
+      {/* 차량 요약 헤더 */}
+      <Section
+        icon={<Car size={12} weight="duotone" />}
+        title={`${c.vehiclePlate} · ${c.vehicleModel}`}
+      >
+        <div className="detail-grid-2" style={{ marginTop: 4 }}>
+          <div>
+            <Field label="계약 횟수" value={`${vehicleContracts.length}건`} mono />
+            <Field label="누적 입금액" value={`₩${formatCurrency(totalPaid)}`} mono />
+            <Field label="실 입금 (정산 제외)" value={`₩${formatCurrency(realIncoming)}`} mono />
+          </div>
+          <div>
+            <Field label="누적 청구할인" value={totalDiscount > 0 ? `-₩${formatCurrency(totalDiscount)}` : <span className="muted">-</span>} mono />
+            <Field label="스냅샷 정산분" value={settledAmount > 0 ? `₩${formatCurrency(settledAmount)}` : <span className="muted">-</span>} mono />
+            <Field label="입금 건수" value={`${rows.length}건`} mono />
+          </div>
+        </div>
+      </Section>
+
+      {/* 계약자별 요약 (시각 구분 도움) */}
+      {customerGroups.length > 1 && (
+        <Section icon={<User size={12} weight="duotone" />} title={`계약자 ${customerGroups.length}명`}>
+          <table className="table" style={{ fontSize: 11 }}>
+            <thead>
+              <tr>
+                <th>계약자</th>
+                <th className="mono">계약일자</th>
+                <th className="num">누적 입금액</th>
+              </tr>
+            </thead>
+            <tbody>
+              {customerGroups.map((g) => (
+                <tr key={`${g.name}-${g.contractDate}`}>
+                  <td>{g.name}</td>
+                  <td className="mono dim">{formatDateFull(g.contractDate)}</td>
+                  <td className="num mono">₩{formatCurrency(g.total)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Section>
+      )}
+
+      {/* 통합 수납이력 — 채권탭 대응 */}
+      <Section icon={<CurrencyKrw size={12} weight="duotone" />} title={`수납이력 — ${rows.length}건 (최근순)`}>
+        {rows.length === 0 ? (
+          <div style={{ padding: 32, color: 'var(--text-weak)', textAlign: 'center', fontSize: 12 }}>
+            이 차량에 입금된 내역이 없습니다.
+          </div>
+        ) : (
+          <table className="table">
+            <thead>
+              <tr>
+                <th style={{ width: 110 }}>일자</th>
+                <th>계약자</th>
+                <th className="mono dim" style={{ width: 110 }}>계약일자</th>
+                <th className="center mono" style={{ width: 60 }}>회차</th>
+                <th className="num" style={{ width: 120 }}>금액</th>
+                <th className="center" style={{ width: 60 }}>방식</th>
+                <th>메모</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => {
+                const tint = rowTints.get(`${r.date}-${r.contractId}-${r.seq}`) ?? 0;
+                return (
+                  <tr key={i} style={{ background: tint === 0 ? undefined : 'var(--bg-sunken)' }}>
+                    <td className="mono">{formatDateFull(r.date)}</td>
+                    <td style={{ fontWeight: 500 }}>{r.customerName}</td>
+                    <td className="mono dim">{formatDateFull(r.contractDate)}</td>
+                    <td className="center mono dim">{r.seq}회</td>
+                    <td className="num mono">₩{formatCurrency(r.amount)}</td>
+                    <td className="center">
+                      <span className="chip" style={{
+                        height: 18, padding: '0 8px', fontSize: 10, fontWeight: 500,
+                        background: r.source === '정산' ? 'var(--bg-sunken)'
+                          : r.source === '계좌' ? 'var(--blue-bg)'
+                          : r.source === '카드' ? 'var(--purple-bg)'
+                          : 'var(--green-bg)',
+                        color: r.source === '정산' ? 'var(--text-weak)'
+                          : r.source === '계좌' ? 'var(--blue-text)'
+                          : r.source === '카드' ? 'var(--purple-text)'
+                          : 'var(--green-text)',
+                      }}>{r.source}</span>
+                    </td>
+                    <td className="dim">{r.memo || (r.by ? `(${r.by})` : '-')}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
       </Section>
     </div>
   );
