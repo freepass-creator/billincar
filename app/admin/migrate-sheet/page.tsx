@@ -144,15 +144,26 @@ export default function MigrateSheetPage() {
       let existingContracts = Object.values(existing);
       append(`현재 DB: 계약 ${existingContracts.length}건`);
 
-      // ─── 0-Z. 회사='아이카' 잘못 박힌 계약 일괄 삭제 (시드에 아이카 없음 — 모두 잔재) ───
-      const icarTargets = existingContracts.filter((c) => c.company === '아이카');
+      // ─── 0-Z. '아이카' 들어간 계약 일괄 삭제 — lenient 매칭 ───
+      // 시드에 아이카 없음 — 모든 변형(공백/괄호/주식회사 등) 잔재 처리
+      const isIcar = (s: string | undefined): boolean => {
+        if (!s) return false;
+        const t = s.replace(/[\s()\-]/g, '').toLowerCase();
+        return t.includes('아이카') || t.includes('icar');
+      };
+      const icarTargets = existingContracts.filter((c) => isIcar(c.company));
       if (icarTargets.length > 0) {
         append(`'아이카' 잘못 박힌 계약 ${icarTargets.length}건 삭제 중...`);
         for (const c of icarTargets) {
+          append(`  - ${c.vehiclePlate} ${c.customerName} (company: "${c.company}")`);
           await rtdbRemove(ref(db, `${icarPath('contracts')}/${c.id}`));
         }
-        existingContracts = existingContracts.filter((c) => c.company !== '아이카');
-        append(`✓ '아이카' ${icarTargets.length}건 삭제`);
+        existingContracts = existingContracts.filter((c) => !isIcar(c.company));
+        append(`✓ '아이카' ${icarTargets.length}건 삭제 완료`);
+      } else {
+        append(`'아이카' 매칭 0건 — 현재 DB의 company 값 샘플:`);
+        const sample = Array.from(new Set(existingContracts.map((c) => c.company))).slice(0, 10);
+        for (const s of sample) append(`  · "${s}"`);
       }
 
       // ─── 0-A. DB 자체 중복 정리 (시드 무관) ───
