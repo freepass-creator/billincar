@@ -79,6 +79,46 @@ export default function MigrateSheetPage() {
     setLog((l) => [...l, `[${new Date().toLocaleTimeString('ko-KR')}] ${line}`]);
   }
 
+  /** 위험: company === '아이카' 인 contract 일괄 삭제 */
+  async function deleteAllIcar() {
+    if (!superAdmin) { toast.error('관리자만 실행 가능합니다'); return; }
+    setRunning(true);
+    setLog([]);
+    try {
+      await ensureAuth();
+      const db = getRtdb();
+      if (!db) throw new Error('Firebase 미설정');
+
+      append('현재 DB 조회 중...');
+      const snap = await get(ref(db, icarPath('contracts')));
+      const existing: Record<string, Contract> = snap.val() ?? {};
+      const allContracts = Object.values(existing);
+      const targets = allContracts.filter((c) => c.company === '아이카');
+      append(`전체 ${allContracts.length}건 중 '아이카' 회사: ${targets.length}건`);
+
+      if (targets.length === 0) {
+        toast.warning('아이카 계약 없음');
+        return;
+      }
+      if (!window.confirm(`'아이카' 계약 ${targets.length}건을 영구 삭제합니다. 진행하시겠습니까?`)) return;
+      if (!window.confirm(`한 번 더 확인 — 진짜 삭제할까요? (${targets.length}건)`)) return;
+
+      let deleted = 0;
+      for (const c of targets) {
+        await rtdbRemove(ref(db, `${icarPath('contracts')}/${c.id}`));
+        deleted += 1;
+        if (deleted % 20 === 0) append(`삭제 진행: ${deleted}/${targets.length}`);
+      }
+      append(`✓ '아이카' 계약 ${deleted}건 삭제 완료`);
+      toast.success(`아이카 ${deleted}건 삭제 완료`);
+    } catch (e) {
+      append(`❌ 오류: ${friendlyError(e)}`);
+      toast.error(friendlyError(e));
+    } finally {
+      setRunning(false);
+    }
+  }
+
   async function runFullMigration() {
     if (!superAdmin) { toast.error('관리자만 실행 가능합니다'); return; }
     if (!window.confirm(
@@ -512,6 +552,15 @@ export default function MigrateSheetPage() {
                 style={{ height: 44, fontSize: 14, fontWeight: 600 }}
               >
                 <Upload weight="bold" size={16} /> 전체 import + 중복 정리
+              </button>
+              <button
+                className="btn btn-danger"
+                type="button"
+                disabled={running || !superAdmin}
+                onClick={deleteAllIcar}
+                style={{ height: 40, fontSize: 13 }}
+              >
+                <Warning weight="bold" size={14} /> 회사='아이카' 계약 일괄 삭제 (잘못 박힌 것)
               </button>
               <div style={{ fontSize: 11, color: 'var(--text-weak)', lineHeight: 1.6 }}>
                 ✓ (차량+고객) 기준 중복 발견 시 실 입금 많은 쪽 keeper → 나머지 삭제 + 입금 이전<br />
