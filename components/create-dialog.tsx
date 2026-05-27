@@ -1443,47 +1443,64 @@ function SnapshotPane({
         />
       </div>
 
-      {/* 가로확장 다중계약 시트 감지 시 — 진단 정보 + import 버튼 */}
-      {horizontalSheets.length > 0 && onCommitHorizontal && horizontalSheets.map((s, i) => {
+      {/* 가로확장 import — 자동감지 / 수동강제 둘 다 지원 */}
+      {sheets.length > 0 && onCommitHorizontal && sheets.map((s, i) => {
         const diag = diagnoseHorizontalSheet(s.headers);
-        const canImport = !!diag.vehiclePlateCol && (diag.customerCols.length > 0 || diag.deliveryCols.length > 0);
+        const isAutoDetected = horizontalSheets.includes(s);
+        const canImport = !!diag.vehiclePlateCol;  // 차량번호만 있으면 시도 가능
         return (
           <div
             key={`hc-${i}`}
             style={{
-              padding: 14, background: 'var(--brand-bg)', border: '1px solid var(--brand)',
-              borderRadius: 6, display: 'flex', flexDirection: 'column', gap: 8,
+              padding: 14,
+              background: isAutoDetected ? 'var(--brand-bg)' : 'var(--bg-sunken)',
+              border: `1px solid ${isAutoDetected ? 'var(--brand)' : 'var(--border)'}`,
+              borderRadius: 6,
+              display: 'flex', flexDirection: 'column', gap: 8,
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--brand)' }}>
-                  📋 가로확장 계약 시트 감지 — {s.sheetName}
+                <div style={{ fontWeight: 600, fontSize: 13, color: isAutoDetected ? 'var(--brand)' : 'var(--text-main)' }}>
+                  {isAutoDetected ? '📋 가로확장 계약 시트 감지' : '📊 가로확장 import (수동 강제)'} — {s.sheetName}
                 </div>
+                {!isAutoDetected && (
+                  <div style={{ fontSize: 11, color: 'var(--text-sub)', marginTop: 2 }}>
+                    자동감지 안 됐지만 수동 시도 가능. 진단 결과 확인 후 import 클릭.
+                  </div>
+                )}
               </div>
               <button
-                className="btn btn-primary"
+                className={isAutoDetected ? 'btn btn-primary' : 'btn'}
                 type="button"
                 disabled={busy || !canImport}
                 onClick={() => onCommitHorizontal(s)}
+                title={!canImport ? '차량번호 컬럼 (차량번호/자산번호/번호판) 필요' : '시트 한 행에서 N개 계약 추출 → 일괄 등록'}
               >
-                <CheckCircle weight="bold" /> import {diag.customerCols.length > 0 ? `(차량당 ${diag.customerCols.length}개 계약)` : ''}
+                <CheckCircle weight="bold" /> import {diag.customerCols.length > 1 ? `(차량당 ${diag.customerCols.length}개)` : ''}
               </button>
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-sub)', display: 'grid', gridTemplateColumns: '90px 1fr', gap: '4px 8px' }}>
-              <span style={{ fontWeight: 600 }}>차량번호 컬럼</span>
-              <span className="mono">{diag.vehiclePlateCol ?? <span style={{ color: 'var(--red-text)' }}>❌ 못 찾음 (차량번호/자산번호/번호판 중 하나 필요)</span>}</span>
+              <span style={{ fontWeight: 600 }}>차량번호</span>
+              <span className="mono">{diag.vehiclePlateCol ?? <span style={{ color: 'var(--red-text)' }}>❌ 없음</span>}</span>
               <span style={{ fontWeight: 600 }}>고객명 ({diag.customerCols.length})</span>
-              <span className="mono">{diag.customerCols.length > 0 ? diag.customerCols.join(' · ') : <span className="dim">없음</span>}</span>
+              <span className="mono" style={{ fontSize: 10 }}>{diag.customerCols.length > 0 ? diag.customerCols.join(' · ') : <span className="dim">없음</span>}</span>
               <span style={{ fontWeight: 600 }}>인도일 ({diag.deliveryCols.length})</span>
-              <span className="mono">{diag.deliveryCols.length > 0 ? diag.deliveryCols.join(' · ') : <span className="dim">없음</span>}</span>
+              <span className="mono" style={{ fontSize: 10 }}>{diag.deliveryCols.length > 0 ? diag.deliveryCols.join(' · ') : <span className="dim">없음</span>}</span>
               <span style={{ fontWeight: 600 }}>종료일 ({diag.returnCols.length})</span>
-              <span className="mono">{diag.returnCols.length > 0 ? diag.returnCols.join(' · ') : <span className="dim">없음</span>}</span>
+              <span className="mono" style={{ fontSize: 10 }}>{diag.returnCols.length > 0 ? diag.returnCols.join(' · ') : <span className="dim">없음</span>}</span>
               <span style={{ fontWeight: 600 }}>대여료 ({diag.rentCols.length})</span>
-              <span className="mono">{diag.rentCols.length > 0 ? diag.rentCols.join(' · ') : <span className="dim">없음</span>}</span>
+              <span className="mono" style={{ fontSize: 10 }}>{diag.rentCols.length > 0 ? diag.rentCols.join(' · ') : <span className="dim">없음</span>}</span>
               <span style={{ fontWeight: 600 }}>보증금 ({diag.depositCols.length})</span>
-              <span className="mono">{diag.depositCols.length > 0 ? diag.depositCols.join(' · ') : <span className="dim">없음</span>}</span>
+              <span className="mono" style={{ fontSize: 10 }}>{diag.depositCols.length > 0 ? diag.depositCols.join(' · ') : <span className="dim">없음</span>}</span>
             </div>
+            {/* 전체 헤더 보기 — 매칭 안 잡힌 케이스 디버깅 */}
+            <details style={{ fontSize: 11, color: 'var(--text-weak)' }}>
+              <summary style={{ cursor: 'pointer' }}>전체 헤더 ({s.headers.length}개) 보기</summary>
+              <div className="mono" style={{ fontSize: 10, padding: 6, background: 'var(--bg-card)', marginTop: 4, borderRadius: 4, wordBreak: 'break-all' }}>
+                {s.headers.map((h, idx) => `${idx + 1}.${h}`).join(' | ')}
+              </div>
+            </details>
           </div>
         );
       })}
