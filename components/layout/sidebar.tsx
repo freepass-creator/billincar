@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  House, Warning, Buildings, Gear, CaretLeft, CaretRight, ChartBar, CurrencyKrw, ClipboardText, BookOpen, Upload,
+  House, Warning, Buildings, Gear, CaretLeft, CaretRight, ChartBar, CurrencyKrw, BookOpen, Wrench,
 } from '@phosphor-icons/react';
 import { useAuth } from '@/lib/use-auth';
 import { isAdmin } from '@/lib/admin-emails';
@@ -75,15 +75,9 @@ export function Sidebar(_props: SidebarProps = {} as SidebarProps) {
           <span>법인 관리</span>
         </Link>
         {admin && (
-          <Link href="/admin/import-templates" className={`sb-item ${isActive('/admin/import-templates') ? 'active' : ''}`} title="계약이력 / 수납이력 일괄 업로드 (관리자 전용)">
-            <Upload size={14} weight={isActive('/admin/import-templates') ? 'fill' : 'regular'} />
-            <span>이력 업로드</span>
-          </Link>
-        )}
-        {admin && (
-          <Link href="/admin/audit" className={`sb-item ${isActive('/admin/audit') ? 'active' : ''}`} title="감사 로그 — 누가 언제 무엇을 (관리자 전용)">
-            <ClipboardText size={14} weight={isActive('/admin/audit') ? 'fill' : 'regular'} />
-            <span>감사 로그</span>
+          <Link href="/admin/dev-tools" className={`sb-item ${isActive('/admin/dev-tools') ? 'active' : ''}`} title="개발도구 — 이력 업로드 / 진단 / wipe / 감사 로그 (관리자 전용)">
+            <Wrench size={14} weight={isActive('/admin/dev-tools') ? 'fill' : 'regular'} />
+            <span>개발도구</span>
           </Link>
         )}
         <Link href="/help" className={`sb-item ${isActive('/help') ? 'active' : ''}`} title="사용 안내 — 처음 쓰는 직원 가이드">
