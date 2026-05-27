@@ -1,0 +1,312 @@
+'use client';
+
+import { useState } from 'react';
+import { ref, get, update as rtdbUpdate, push } from 'firebase/database';
+import { Upload, Warning, Download, FileXls, CheckCircle } from '@phosphor-icons/react';
+import { Sidebar } from '@/components/layout/sidebar';
+import { getRtdb, icarPath, ensureAuth, pruneUndefined } from '@/lib/firebase/client';
+import { useAuth } from '@/lib/use-auth';
+import { isSuperAdmin } from '@/lib/admin-emails';
+import { toast } from '@/lib/toast';
+import { friendlyError } from '@/lib/friendly-error';
+import { downloadHorizontalTemplate } from '@/lib/excel-template';
+import { CONTRACT_HISTORY_TEMPLATE, RECEIPT_HISTORY_TEMPLATE } from '@/lib/import-schema';
+import {
+  parseContractHistory, buildContractsFromParsed, type ParsedContractRow,
+  parseReceiptHistory, applyReceiptsToContracts, type ParsedReceiptRow,
+} from '@/lib/migrate/templates';
+import type { Contract } from '@/lib/types';
+
+export default function ImportTemplatesPage() {
+  const { user } = useAuth();
+  const superAdmin = isSuperAdmin(user?.email);
+  const [running, setRunning] = useState(false);
+  const [log, setLog] = useState<string[]>([]);
+  const [contractParsed, setContractParsed] = useState<ParsedContractRow[] | null>(null);
+  const [receiptParsed, setReceiptParsed] = useState<ParsedReceiptRow[] | null>(null);
+
+  function append(line: string) {
+    setLog((l) => [...l, `[${new Date().toLocaleTimeString('ko-KR')}] ${line}`]);
+  }
+
+  async function handleContractFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    try {
+      const rows = await parseContractHistory(f);
+      setContractParsed(rows);
+      const blockSum = rows.reduce((s, r) => s + r.blocks.length, 0);
+      append(`✓ 계약이력 파싱: 차량 ${rows.length}대, 계약 ${blockSum}건`);
+    } catch (err) {
+      toast.error(friendlyError(err));
+      append(`✗ 파싱 실패: ${friendlyError(err)}`);
+    }
+  }
+
+  async function handleReceiptFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    try {
+      const rows = await parseReceiptHistory(f);
+      setReceiptParsed(rows);
+      const sumP = rows.reduce((s, r) => s + r.payments.length, 0);
+      append(`✓ 수납이력 파싱: 계약 ${rows.length}건, 결제 ${sumP}건`);
+    } catch (err) {
+      toast.error(friendlyError(err));
+      append(`✗ 파싱 실패: ${friendlyError(err)}`);
+    }
+  }
+
+  async function applyContractHistory() {
+    if (!superAdmin) { toast.error('관리자만 실행 가능합니다'); return; }
+    if (!contractParsed || contractParsed.length === 0) { toast.warning('계약이력 파일을 먼저 업로드하세요'); return; }
+    if (!window.confirm(`계약이력 ${contractParsed.length}대(차량) 적용 — 같은 차량+계약자는 갱신, 신규는 추가`)) return;
+    setRunning(true);
+    try {
+      await ensureAuth();
+      const db = getRtdb();
+      if (!db) throw new Error('Firebase 미설정');
+
+      append('현재 DB 조회 중...');
+      const snap = await get(ref(db, icarPath('contracts')));
+      const existing: Record<string, Contract> = snap.val() ?? {};
+      const existingArr = Object.values(existing);
+      append(`현재 계약 ${existingArr.length}건`);
+
+      const { newOrUpdated, touched } = buildContractsFromParsed(contractParsed, existingArr);
+      append(`처리 대상: ${newOrUpdated.length}건 (차량 ${touched.size}대)`);
+
+      const writeBatch: Record<string, Contract> = {};
+      let created = 0;
+      let updated = 0;
+      for (const item of newOrUpdated) {
+        const { _existingId, ...c } = item;
+        if (_existingId) {
+          writeBatch[_existingId] = { ...c, id: _existingId };
+          updated += 1;
+        } else {
+          const newRef = push(ref(db, icarPath('contracts')));
+          const id = newRef.key!;
+          writeBatch[id] = { ...c, id };
+          created += 1;
+        }
+      }
+
+      append(`RTDB 일괄 적용 중... (신규 ${created} / 갱신 ${updated})`);
+      const pruned: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(writeBatch)) pruned[k] = pruneUndefined(v);
+      await rtdbUpdate(ref(db, icarPath('contracts')), pruned);
+
+      append(`✓ 완료 — 신규 ${created} / 갱신 ${updated}`);
+      toast.success(`계약이력 적용 완료 (신규 ${created} / 갱신 ${updated})`);
+    } catch (err) {
+      append(`✗ 실패: ${friendlyError(err)}`);
+      toast.error(friendlyError(err));
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  async function applyReceiptHistory() {
+    if (!superAdmin) { toast.error('관리자만 실행 가능합니다'); return; }
+    if (!receiptParsed || receiptParsed.length === 0) { toast.warning('수납이력 파일을 먼저 업로드하세요'); return; }
+    const totalP = receiptParsed.reduce((s, r) => s + r.payments.length, 0);
+    if (!window.confirm(`수납이력 ${totalP}건 결제 매칭 적용 — 차량+등록번호로 계약 찾아 schedule에 입금 누적`)) return;
+    setRunning(true);
+    try {
+      await ensureAuth();
+      const db = getRtdb();
+      if (!db) throw new Error('Firebase 미설정');
+
+      append('현재 DB 조회 중...');
+      const snap = await get(ref(db, icarPath('contracts')));
+      const existing: Record<string, Contract> = snap.val() ?? {};
+      const existingArr = Object.values(existing);
+      append(`현재 계약 ${existingArr.length}건`);
+
+      const { writeBatch, result } = applyReceiptsToContracts(receiptParsed, existingArr);
+      append(`매칭 결과 — 결제 ${result.paymentsAdded}건 / 등록번호 백필 ${result.contractsBackfilled}건 / 미매칭 ${result.unmatchedRows.length}건`);
+
+      if (result.unmatchedRows.length > 0) {
+        for (const u of result.unmatchedRows.slice(0, 10)) {
+          append(`  · 미매칭: ${u.vehiclePlate} / ${u.customerIdentNo}`);
+        }
+      }
+
+      const updateOnly: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(writeBatch)) updateOnly[k] = pruneUndefined(v);
+      if (Object.keys(updateOnly).length > 0) {
+        append(`RTDB 일괄 적용 중... (${Object.keys(updateOnly).length}건)`);
+        await rtdbUpdate(ref(db, icarPath('contracts')), updateOnly);
+      }
+
+      append(`✓ 수납이력 적용 완료`);
+      toast.success(`수납이력 적용 완료 — 결제 ${result.paymentsAdded}건 매칭`);
+    } catch (err) {
+      append(`✗ 실패: ${friendlyError(err)}`);
+      toast.error(friendlyError(err));
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <div className="layout">
+      <Sidebar />
+      <div className="app">
+        <header className="topbar">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 600, fontSize: 14, color: 'var(--text-main)' }}>
+            <Upload size={16} weight="fill" style={{ color: 'var(--brand)' }} />
+            계약이력 / 수납이력 일괄 업로드
+          </div>
+        </header>
+
+        <div style={{ padding: 24, maxWidth: 900, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <header className="page-header">
+            <div className="page-header-title-group">
+              <h1 className="page-header-title">
+                <Upload size={18} weight="duotone" />
+                템플릿 일괄 업로드
+              </h1>
+              <div className="page-header-title-sub">
+                계약이력 / 수납이력 horizontal 양식 — 1행 = 1차량(또는 1계약), 우측으로 이력 누적
+              </div>
+            </div>
+          </header>
+
+          {!superAdmin && (
+            <div style={{ padding: 14, background: 'var(--red-bg)', color: 'var(--red-text)', borderRadius: 6, fontSize: 13 }}>
+              <Warning size={14} weight="fill" style={{ marginRight: 6, verticalAlign: 'middle' }} />
+              SUPER_ADMIN 만 실행할 수 있습니다.
+            </div>
+          )}
+
+          {/* 1단계: 템플릿 다운로드 */}
+          <section className="detail-section">
+            <div className="detail-section-header"><span className="title">1단계 — 양식 다운로드</span></div>
+            <div className="detail-section-body" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <button
+                className="btn"
+                type="button"
+                onClick={() => downloadHorizontalTemplate(CONTRACT_HISTORY_TEMPLATE)}
+                style={{ flex: '1 1 280px', height: 56, display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'flex-start', padding: '8px 14px' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600 }}>
+                  <Download size={14} /> 계약이력.xlsx
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-weak)' }}>
+                  차량번호 + [구분/고객명/인도/종료/반납/대여료/보증금/영업자] × {CONTRACT_HISTORY_TEMPLATE.blockRepeat}
+                </div>
+              </button>
+              <button
+                className="btn"
+                type="button"
+                onClick={() => downloadHorizontalTemplate(RECEIPT_HISTORY_TEMPLATE)}
+                style={{ flex: '1 1 280px', height: 56, display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'flex-start', padding: '8px 14px' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600 }}>
+                  <Download size={14} /> 수납이력.xlsx
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-weak)' }}>
+                  차량번호 + 등록번호 + [청구/결제/일자/수단/미납] × {RECEIPT_HISTORY_TEMPLATE.blockRepeat}
+                </div>
+              </button>
+            </div>
+          </section>
+
+          {/* 2단계: 계약이력 업로드 */}
+          <section className="detail-section">
+            <div className="detail-section-header"><span className="title">2단계 — 계약이력 업로드</span></div>
+            <div className="detail-section-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <label className="btn" style={{ height: 40, fontSize: 13, cursor: 'pointer' }}>
+                <FileXls size={14} /> 계약이력.xlsx 파일 선택
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  style={{ display: 'none' }}
+                  onChange={handleContractFile}
+                  disabled={!superAdmin || running}
+                />
+              </label>
+              {contractParsed && (
+                <div style={{ padding: 10, background: 'var(--blue-bg)', borderRadius: 4, fontSize: 12 }}>
+                  파싱됨 — 차량 <strong>{contractParsed.length}대</strong>,
+                  계약 <strong>{contractParsed.reduce((s, r) => s + r.blocks.length, 0)}건</strong>
+                  <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text-sub)' }}>
+                    예시: {contractParsed.slice(0, 3).map((r) => `${r.vehiclePlate}(${r.blocks.length})`).join(', ')}
+                    {contractParsed.length > 3 && ` ... 외 ${contractParsed.length - 3}대`}
+                  </div>
+                </div>
+              )}
+              <button
+                className="btn btn-primary"
+                type="button"
+                disabled={!superAdmin || running || !contractParsed}
+                onClick={applyContractHistory}
+                style={{ height: 44, fontSize: 14, fontWeight: 600 }}
+              >
+                <Upload weight="bold" size={14} /> 계약이력 DB 적용
+              </button>
+            </div>
+          </section>
+
+          {/* 3단계: 수납이력 업로드 */}
+          <section className="detail-section">
+            <div className="detail-section-header"><span className="title">3단계 — 수납이력 업로드 (계약이력 적용 후)</span></div>
+            <div className="detail-section-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <label className="btn" style={{ height: 40, fontSize: 13, cursor: 'pointer' }}>
+                <FileXls size={14} /> 수납이력.xlsx 파일 선택
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  style={{ display: 'none' }}
+                  onChange={handleReceiptFile}
+                  disabled={!superAdmin || running}
+                />
+              </label>
+              {receiptParsed && (
+                <div style={{ padding: 10, background: 'var(--green-bg)', borderRadius: 4, fontSize: 12 }}>
+                  파싱됨 — 계약 <strong>{receiptParsed.length}건</strong>,
+                  결제 <strong>{receiptParsed.reduce((s, r) => s + r.payments.length, 0)}건</strong>
+                </div>
+              )}
+              <button
+                className="btn btn-primary"
+                type="button"
+                disabled={!superAdmin || running || !receiptParsed}
+                onClick={applyReceiptHistory}
+                style={{ height: 44, fontSize: 14, fontWeight: 600 }}
+              >
+                <Upload weight="bold" size={14} /> 수납이력 DB 적용
+              </button>
+            </div>
+          </section>
+
+          {log.length > 0 && (
+            <section className="detail-section">
+              <div className="detail-section-header">
+                <CheckCircle size={12} weight="duotone" style={{ color: 'var(--green-text)' }} />
+                <span className="title">로그</span>
+              </div>
+              <div className="detail-section-body">
+                <pre style={{
+                  fontSize: 11,
+                  lineHeight: 1.6,
+                  margin: 0,
+                  padding: 10,
+                  background: 'var(--bg-sub)',
+                  borderRadius: 4,
+                  maxHeight: 400,
+                  overflow: 'auto',
+                  whiteSpace: 'pre-wrap',
+                }}>
+                  {log.join('\n')}
+                </pre>
+              </div>
+            </section>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

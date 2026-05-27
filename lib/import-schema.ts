@@ -118,3 +118,73 @@ export const CARD_TX_COLUMNS: ColumnSpec[] = [
   { label: '가맹점',       field: 'merchant',     required: false, example: 'icar 렌트' },
   { label: '고객명',       field: 'customerName', required: false, example: '강지훈', hint: '계약자명과 자동 매칭' },
 ];
+
+/* ─────────────── Horizontal 양식 (좌측 고정 + 우측 블록 반복) ─────────────── */
+/**
+ * 시트형 양식. 1행 = 1차량. 우측으로 갈수록 직전 계약/결제 이력이 반복 누적된다.
+ * 사용처: 계약이력 / 수납이력 일괄 마이그레이션.
+ */
+export type HorizontalTemplateSpec = {
+  /** 다운로드 파일명 */
+  filename: string;
+  /** 시트 타이틀 */
+  title: string;
+  /** 사용자 가이드 노트 */
+  notes: string[];
+  /** 좌측 고정 컬럼 (차량번호, 등록번호 등) */
+  fixedColumns: ColumnSpec[];
+  /** 반복 블록 컬럼 (계약자 1명분 또는 결제 1건분) */
+  blockColumns: ColumnSpec[];
+  /** 다운로드 시 빈 블록 반복 개수 */
+  blockRepeat: number;
+};
+
+/* ─────────────── 계약이력 (차량 단위, 우측으로 직전 계약 반복) ─────────────── */
+export const CONTRACT_HISTORY_TEMPLATE: HorizontalTemplateSpec = {
+  filename: '계약이력.xlsx',
+  title: '계약이력 일괄 등록',
+  notes: [
+    '· 1행 = 1차량. 우측으로 갈수록 직전 계약자.',
+    '· 첫 블록 = 현재 계약자(가장 최근). 비어있으면 휴차로 등록.',
+    '· 같은 차량번호가 이미 있으면 기존 차량에 계약 이력 누적.',
+    '· 등록번호는 수납이력.xlsx 에서 매칭으로 자동 백필.',
+  ],
+  fixedColumns: [
+    { label: '차량번호', field: 'vehiclePlate', required: true, example: '41구1614', hint: '한국식 차량번호. 동일 번호는 1대로 통합' },
+  ],
+  blockColumns: [
+    { label: '구분',     field: 'kind',                required: false, example: '개인',       hint: '개인/사업자/법인' },
+    { label: '고객명',   field: 'customerName',        required: true,  example: '조해인',     hint: '비어있으면 해당 블록 무시' },
+    { label: '인도일자', field: 'deliveredDate',       required: false, example: '2025-04-22' },
+    { label: '종료일자', field: 'returnScheduledDate', required: false, example: '2026-04-21' },
+    { label: '반납일자', field: 'returnedDate',        required: false, example: '',           hint: '반납 완료된 계약만. 비어있으면 운행중' },
+    { label: '대여료',   field: 'monthlyRent',         required: false, example: '650000',     hint: '월 단위 (원)' },
+    { label: '보증금',   field: 'deposit',             required: false, example: '0' },
+    { label: '영업자',   field: 'salesperson',         required: false, example: '장근안' },
+  ],
+  blockRepeat: 5,
+};
+
+/* ─────────────── 수납이력 (차량+등록번호 키, 우측으로 결제 반복) ─────────────── */
+export const RECEIPT_HISTORY_TEMPLATE: HorizontalTemplateSpec = {
+  filename: '수납이력.xlsx',
+  title: '수납이력 일괄 등록',
+  notes: [
+    '· 1행 = 1계약(차량+등록번호 조합). 우측으로 갈수록 과거 결제.',
+    '· 차량번호 + 계약자등록번호로 계약을 찾아 결제 이력 누적.',
+    '· 등록번호가 새 값이면 해당 차량의 계약자명과 자동 매칭 시도.',
+    '· 결제일자가 비어있으면 해당 블록 무시.',
+  ],
+  fixedColumns: [
+    { label: '차량번호',       field: 'vehiclePlate',    required: true, example: '41구1614' },
+    { label: '계약자등록번호', field: 'customerIdentNo', required: true, example: '900101-1234567', hint: '주민/사업자/법인 번호. 자릿수로 자동 구분. 표시는 마스킹' },
+  ],
+  blockColumns: [
+    { label: '청구금액', field: 'charged',     required: false, example: '650000',      hint: '비어있으면 결제금액으로 가정' },
+    { label: '결제금액', field: 'amount',      required: true,  example: '650000',      hint: '실제 입금된 금액' },
+    { label: '결제일자', field: 'paymentDate', required: true,  example: '2025-05-25',  hint: '비어있으면 해당 블록 무시' },
+    { label: '결제수단', field: 'method',      required: false, example: '계좌이체',    hint: 'CMS/카드/이체/현금/세금계산서/후불' },
+    { label: '미납금액', field: 'unpaidAmount', required: false, example: '0',          hint: '청구 - 결제. 0이면 완납' },
+  ],
+  blockRepeat: 20,
+};

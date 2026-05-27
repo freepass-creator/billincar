@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  House, Warning, Buildings, Gear, CaretLeft, CaretRight, ChartBar, CurrencyKrw, ClipboardText, BookOpen,
+  House, Warning, Buildings, Gear, CaretLeft, CaretRight, ChartBar, CurrencyKrw, ClipboardText, BookOpen, Upload,
 } from '@phosphor-icons/react';
 import { useAuth } from '@/lib/use-auth';
 import { isAdmin } from '@/lib/admin-emails';
@@ -74,6 +74,12 @@ export function Sidebar(_props: SidebarProps = {} as SidebarProps) {
           <Buildings size={14} weight={isActive('/companies') ? 'fill' : 'regular'} />
           <span>법인 관리</span>
         </Link>
+        {admin && (
+          <Link href="/admin/import-templates" className={`sb-item ${isActive('/admin/import-templates') ? 'active' : ''}`} title="계약이력 / 수납이력 일괄 업로드 (관리자 전용)">
+            <Upload size={14} weight={isActive('/admin/import-templates') ? 'fill' : 'regular'} />
+            <span>이력 업로드</span>
+          </Link>
+        )}
         {admin && (
           <Link href="/admin/audit" className={`sb-item ${isActive('/admin/audit') ? 'active' : ''}`} title="감사 로그 — 누가 언제 무엇을 (관리자 전용)">
             <ClipboardText size={14} weight={isActive('/admin/audit') ? 'fill' : 'regular'} />
