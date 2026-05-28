@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Power, FileXls, ChatCircleDots, X, MagnifyingGlass, Plus, Gavel, Warning, DownloadSimple, PaperPlaneTilt } from '@phosphor-icons/react';
+import { Power, FileXls, ChatCircleDots, X, MagnifyingGlass, Plus, Gavel, Warning, DownloadSimple, PaperPlaneTilt, FileText } from '@phosphor-icons/react';
 import { Sidebar } from '@/components/layout/sidebar';
 import { BottomBar } from '@/components/layout/bottom-bar';
 import { SmsDialog } from '@/components/sms-dialog';
@@ -222,7 +222,7 @@ export default function ReceivablesPage() {
                     <th className="center" style={{ width: 100 }}>마지막연락</th>
                     <th className="center" style={{ width: 80 }}>시동제어</th>
                     <th className="center" style={{ width: 70 }}>채권</th>
-                    <th style={{ width: 100 }}>액션</th>
+                    <th style={{ width: 170 }}>액션</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -302,7 +302,7 @@ export default function ReceivablesPage() {
                               {c.status === '채권' ? 'ON' : 'OFF'}
                             </button>
                           </td>
-                          <td>
+                          <td style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                             <button
                               type="button"
                               className="btn"
@@ -311,6 +311,15 @@ export default function ReceivablesPage() {
                               title="연락기록 추가"
                             >
                               <ChatCircleDots size={11} /> 연락
+                            </button>
+                            <button
+                              type="button"
+                              className="btn"
+                              onClick={() => window.open(`/notice/cert/${c.id}`, '_blank')}
+                              style={{ height: 22, padding: '0 8px', fontSize: 10 }}
+                              title="내용증명 (최고서) — 새 탭"
+                            >
+                              <FileText size={11} /> 내용증명
                             </button>
                           </td>
                         </tr>
