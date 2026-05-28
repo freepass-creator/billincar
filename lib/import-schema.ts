@@ -1,4 +1,4 @@
-// icar001 — 신규 생성 시 엑셀에 들어가야 할 컬럼 명세
+// jpkerp5 — 신규 생성 시 엑셀에 들어가야 할 컬럼 명세
 // 각 컬럼은 Contract / BankTransaction / CardTransaction 필드로 매핑됨
 
 export type ColumnSpec = {

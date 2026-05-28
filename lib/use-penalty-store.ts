@@ -27,7 +27,7 @@ function stripRuntime(item: PenaltyWorkItem): PenaltyWorkItem {
 }
 
 const { useStore } = createKeyedStore<PenaltyWorkItem>({
-  path: 'icar001/penalties',
+  path: 'jpkerp5/penalties',
   getKey: (p) => p.id,
   storeName: 'penalty-store',
   sortBy: (a, b) => (b.issue_date ?? '').localeCompare(a.issue_date ?? ''),

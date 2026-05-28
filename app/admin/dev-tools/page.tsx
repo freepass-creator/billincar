@@ -25,7 +25,7 @@ const TOOLS: ToolCard[] = [
   {
     href: '/admin/migrate-sheet',
     title: '진단 · wipe',
-    desc: 'DB 노드 상태 진단 / 전체 wipe / 아이카 잔재 정리 등 위험 도구.',
+    desc: 'DB 노드 상태 진단 / 전체 wipe / 잘못 박힌 회사 계약 정리 등 위험 도구.',
     icon: <Database size={18} weight="duotone" />,
     variant: 'danger',
   },

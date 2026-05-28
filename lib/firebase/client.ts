@@ -4,7 +4,7 @@ import { getAuth, onAuthStateChanged, type Auth } from 'firebase/auth';
 
 /**
  * jpkerp5 Firebase 클라이언트 — RTDB + Auth.
- * jpkerp 프로젝트 재사용, 노드 prefix = '/icar001/...' (icar001과 데이터 공유)
+ * 공유 Firebase 프로젝트(jpkerp)를 쓰지만 노드 prefix = '/jpkerp5/...' 로 독립.
  */
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? '',
@@ -17,7 +17,7 @@ const firebaseConfig = {
 };
 
 /** 데이터 노드 prefix — jpkerp ERP 와 분리 */
-export const ICAR_ROOT = 'icar001';
+export const ICAR_ROOT = 'jpkerp5';
 
 let _app: FirebaseApp | null = null;
 let _rtdb: Database | null = null;

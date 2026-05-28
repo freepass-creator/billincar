@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { ref, push, get, update as rtdbUpdate, remove as rtdbRemove } from 'firebase/database';
 import { Database, Upload, Warning, CheckCircle } from '@phosphor-icons/react';
 import { Sidebar } from '@/components/layout/sidebar';
-import { getRtdb, icarPath, ensureAuth, pruneUndefined } from '@/lib/firebase/client';
+import { getRtdb, icarPath, ICAR_ROOT, ensureAuth, pruneUndefined } from '@/lib/firebase/client';
 import { useAuth } from '@/lib/use-auth';
 import { isSuperAdmin } from '@/lib/admin-emails';
 import { generateSchedules } from '@/lib/payment-schedule';
@@ -79,7 +79,7 @@ export default function MigrateSheetPage() {
     setLog((l) => [...l, `[${new Date().toLocaleTimeString('ko-KR')}] ${line}`]);
   }
 
-  /** 진단 — Firebase 프로젝트 정보 + icar001 노드 상태 전체 출력 */
+  /** 진단 — Firebase 프로젝트 정보 + DB 노드 상태 전체 출력 */
   async function diagnose() {
     if (!superAdmin) { toast.error('관리자만 실행 가능합니다'); return; }
     setRunning(true);
@@ -98,8 +98,8 @@ export default function MigrateSheetPage() {
       append(`super admin: ${superAdmin ? 'YES' : 'NO'}`);
 
       // 2) root 노드 자식 카운트
-      append('═══ icar001 root 자식 노드 ═══');
-      const rootSnap = await get(ref(db, 'icar001'));
+      append(`═══ ${ICAR_ROOT} root 자식 노드 ═══`);
+      const rootSnap = await get(ref(db, ICAR_ROOT));
       const root = rootSnap.val() ?? {};
       if (Object.keys(root).length === 0) {
         append('  (root 비어있음)');
@@ -144,21 +144,21 @@ export default function MigrateSheetPage() {
     }
   }
 
-  /** 강제 wipe — icar001 root 통째로 삭제 (companies/audit_logs 포함 모든 것) */
+  /** 강제 wipe — root 통째로 삭제 (companies/audit_logs 포함 모든 것) */
   async function nukeEverything() {
     if (!superAdmin) { toast.error('관리자만 실행 가능합니다'); return; }
-    if (!window.confirm('☢☢☢ 핵 wipe — icar001 root 노드 전체 삭제\n\ncompanies/audit_logs 포함 모든 데이터 사라집니다.\n진행할까요?')) return;
-    if (!window.confirm('정말로? icar001 노드 전체 삭제')) return;
+    if (!window.confirm(`☢☢☢ 핵 wipe — ${ICAR_ROOT} root 노드 전체 삭제\n\ncompanies/audit_logs 포함 모든 데이터 사라집니다.\n진행할까요?`)) return;
+    if (!window.confirm(`정말로? ${ICAR_ROOT} 노드 전체 삭제`)) return;
     setRunning(true);
     setLog([]);
     try {
       await ensureAuth();
       const db = getRtdb();
       if (!db) throw new Error('Firebase 미설정');
-      append('icar001 root 삭제 중...');
-      await rtdbRemove(ref(db, 'icar001'));
-      append('✓ icar001 root 통째로 삭제 완료');
-      toast.success('icar001 전체 삭제 완료');
+      append(`${ICAR_ROOT} root 삭제 중...`);
+      await rtdbRemove(ref(db, ICAR_ROOT));
+      append(`✓ ${ICAR_ROOT} root 통째로 삭제 완료`);
+      toast.success(`${ICAR_ROOT} 전체 삭제 완료`);
     } catch (e) {
       append(`✗ 실패: ${friendlyError(e)}`);
       toast.error(friendlyError(e));
@@ -177,11 +177,11 @@ export default function MigrateSheetPage() {
       const db = getRtdb();
       if (!db) throw new Error('Firebase 미설정');
 
-      // ── 1) 삭제 전 진단: icar001 root 전체 상태 ──
+      // ── 1) 삭제 전 진단: root 전체 상태 ──
       append('═══ 삭제 전 진단 ═══');
-      const rootSnap = await get(ref(db, 'icar001'));
+      const rootSnap = await get(ref(db, ICAR_ROOT));
       const root = rootSnap.val() ?? {};
-      append(`icar001 root 자식 노드:`);
+      append(`${ICAR_ROOT} root 자식 노드:`);
       for (const [key, val] of Object.entries(root)) {
         const count = val && typeof val === 'object' ? Object.keys(val).length : 0;
         append(`  · ${key}: ${count}건`);
@@ -242,7 +242,7 @@ export default function MigrateSheetPage() {
         toast.success(`DB wipe 성공 — 화면 새로고침 필요`);
       } else {
         append(`⚠️ DB에 아직 데이터 남음 — Rules 또는 권한 문제 의심`);
-        append(`해결: Firebase Console → Realtime Database → icar001 노드 직접 삭제`);
+        append(`해결: Firebase Console → Realtime Database → ${ICAR_ROOT} 노드 직접 삭제`);
         toast.error(`삭제 완료 메시지 떴지만 실제 ${cAfter + vAfter}건 남음 — Rules 문제`);
       }
     } catch (e) {
@@ -700,10 +700,10 @@ export default function MigrateSheetPage() {
             <div className="page-header-title-group">
               <h1 className="page-header-title">
                 <Database size={18} weight="duotone" />
-                시트 마이그레이션
+                DB 진단·정리
               </h1>
               <div className="page-header-title-sub">
-                스위치플랜 사업현황 시트 → Firebase RTDB · 중복 자동 정리
+                Firebase RTDB 노드 진단 · 전체 wipe · 중복 자동 정리
               </div>
             </div>
           </header>
@@ -783,7 +783,7 @@ export default function MigrateSheetPage() {
                 onClick={nukeEverything}
                 style={{ height: 36, fontSize: 12, background: '#450A0A', color: '#fff' }}
               >
-                ☢☢☢ 핵 wipe — icar001 root 통째로 삭제 (최후의 수단)
+                ☢☢☢ 핵 wipe — DB root 통째로 삭제 (최후의 수단)
               </button>
               <div style={{ fontSize: 11, color: 'var(--text-weak)', lineHeight: 1.6 }}>
                 ✓ (차량+고객) 기준 중복 발견 시 실 입금 많은 쪽 keeper → 나머지 삭제 + 입금 이전<br />

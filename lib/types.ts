@@ -1,4 +1,4 @@
-// icar001 — 미수/반납/수납 ERP 핵심 타입
+// jpkerp5 — 미수/반납/수납 ERP 핵심 타입
 
 export type CompanyCode = '아이카' | '달카' | '렌트로' | '직카' | '기타';
 
