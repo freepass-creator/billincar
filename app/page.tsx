@@ -621,6 +621,17 @@ export default function Page() {
 
       <div className="dashboard">
         <div className="panel">
+          <div className="panel-header is-page">
+            <div className="panel-title-lg">
+              <House size={14} weight="duotone" style={{ color: 'var(--brand)' }} />
+              <span>운영 현황</span>
+              <span className="badge">{filteredContracts.length}건</span>
+              <span className="panel-subtitle">{view}{companyFilter !== '전체' ? ` · ${displayCompanyName(companyFilter, companyMaster) || companyFilter}` : ''}</span>
+            </div>
+            <div className="panel-meta" title="미수 합계 — 표시중인 계약 기준">
+              미수 ₩{filteredContracts.reduce((sum, c) => sum + (c.unpaidAmount ?? 0), 0).toLocaleString()}
+            </div>
+          </div>
           <div className="panel-body">
             <table className="table">
               <thead>
