@@ -12,9 +12,9 @@ import { todayKr } from '@/lib/mock-data';
 import { friendlyError } from '@/lib/friendly-error';
 import type { Contract } from '@/lib/types';
 
-type Filter = '연체중' | '부분납' | '시동제어' | '채권화' | '미검' | '보험만료';
+type Filter = '전체' | '연체중' | '부분납' | '시동제어' | '채권화' | '검사지연' | '보험만료';
 
-const FILTERS: Filter[] = ['연체중', '부분납', '시동제어', '채권화', '미검', '보험만료'];
+const FILTERS: Filter[] = ['전체', '연체중', '부분납', '시동제어', '채권화', '검사지연', '보험만료'];
 
 /** 보험만료 임박 — 만료일 이미 지났거나 14일 이내 */
 function isInsuranceExpiring(c: Contract, today: string): boolean {
@@ -22,7 +22,7 @@ function isInsuranceExpiring(c: Contract, today: string): boolean {
   const diff = Math.round((new Date(c.insuranceExpiryDate).getTime() - new Date(today).getTime()) / 86400000);
   return diff <= 14;
 }
-/** 미검 — 정기검사 예정일 지남 */
+/** 검사지연 — 정기검사 예정일 지남 */
 function isInspectionOverdue(c: Contract, today: string): boolean {
   return !!(c.inspectionDueDate && c.inspectionDueDate < today);
 }
@@ -54,7 +54,7 @@ export default function ReceivablesPage() {
   const { entries: history, add: addHistory } = useHistoryEntries();
   const { user } = useAuth();
   const admin = isAdmin(user?.email);
-  const [filter, setFilter] = useState<Filter>('연체중');
+  const [filter, setFilter] = useState<Filter>('전체');
   const [search, setSearch] = useState('');
   const [contactOpen, setContactOpen] = useState<Contract | null>(null);
 
@@ -62,12 +62,18 @@ export default function ReceivablesPage() {
 
   const filtered = useMemo<Contract[]>(() => {
     const base = contracts.filter((c) => c.id && !c.id.startsWith('vehicle-orphan-'));
+    // 전체 = 한 가지 이상 리스크 가진 계약만 (정상 계약 제외)
+    const hasAnyRisk = (c: Contract) =>
+      hasOverdue(c) || hasPartial(c) || c.engineDisabled === true || c.status === '채권'
+      || isInspectionOverdue(c, today) || isInsuranceExpiring(c, today);
+
     let list: Contract[];
-    if (filter === '연체중') list = base.filter(hasOverdue);
+    if (filter === '전체') list = base.filter(hasAnyRisk);
+    else if (filter === '연체중') list = base.filter(hasOverdue);
     else if (filter === '부분납') list = base.filter(hasPartial);
     else if (filter === '시동제어') list = base.filter((c) => c.engineDisabled === true);
     else if (filter === '채권화') list = base.filter((c) => c.status === '채권');
-    else if (filter === '미검') list = base.filter((c) => isInspectionOverdue(c, today));
+    else if (filter === '검사지연') list = base.filter((c) => isInspectionOverdue(c, today));
     else if (filter === '보험만료') list = base.filter((c) => isInsuranceExpiring(c, today));
     else list = base;
 
@@ -81,19 +87,26 @@ export default function ReceivablesPage() {
     );
   }, [contracts, filter, search]);
 
-  const counts = useMemo(() => ({
-    연체중: contracts.filter(hasOverdue).length,
-    부분납: contracts.filter(hasPartial).length,
-    시동제어: contracts.filter((c) => c.engineDisabled === true).length,
-    채권화: contracts.filter((c) => c.status === '채권').length,
-    미검: contracts.filter((c) => isInspectionOverdue(c, today)).length,
-    보험만료: contracts.filter((c) => isInsuranceExpiring(c, today)).length,
-  }), [contracts, today]);
+  const counts = useMemo(() => {
+    const base = contracts.filter((c) => c.id && !c.id.startsWith('vehicle-orphan-'));
+    const hasAnyRisk = (c: Contract) =>
+      hasOverdue(c) || hasPartial(c) || c.engineDisabled === true || c.status === '채권'
+      || isInspectionOverdue(c, today) || isInsuranceExpiring(c, today);
+    return {
+      전체: base.filter(hasAnyRisk).length,
+      연체중: base.filter(hasOverdue).length,
+      부분납: base.filter(hasPartial).length,
+      시동제어: base.filter((c) => c.engineDisabled === true).length,
+      채권화: base.filter((c) => c.status === '채권').length,
+      검사지연: base.filter((c) => isInspectionOverdue(c, today)).length,
+      보험만료: base.filter((c) => isInsuranceExpiring(c, today)).length,
+    };
+  }, [contracts, today]);
 
   async function toggleEngineLock(c: Contract) {
     if (!admin) { toast.error('관리자만 시동제어 가능'); return; }
     const next = !c.engineDisabled;
-    const reason = next ? (prompt('시동제어 사유\n(미납 / 미검 / 보험만료 / 자동차세 / 기타 중 입력)') ?? '') : '';
+    const reason = next ? (prompt('시동제어 사유\n(미납 / 검사지연 / 보험만료 / 자동차세 / 기타 중 입력)') ?? '') : '';
     if (next && reason === null) return;
     try {
       await updateContract({
@@ -110,11 +123,12 @@ export default function ReceivablesPage() {
   }
 
   const filterTone = (f: Filter): string => {
+    if (f === '전체') return 'brand';
     if (f === '연체중') return 'red';
     if (f === '부분납') return 'orange';
     if (f === '시동제어') return 'amber';
     if (f === '채권화') return 'gray';
-    if (f === '미검') return 'blue';
+    if (f === '검사지연') return 'blue';
     if (f === '보험만료') return 'amber';
     return 'brand';
   };
@@ -264,7 +278,7 @@ export default function ReceivablesPage() {
                         ? Math.max(0, Math.round((new Date(today).getTime() - new Date(startDate).getTime()) / 86400000))
                         : 0;
                       const reason = (c.engineDisabledReason || '').trim();
-                      const reasonKey = ['미납', '미검', '보험만료', '자동차세'].find((k) => reason.includes(k)) ?? (reason || '기타');
+                      const reasonKey = ['미납', '검사지연', '보험만료', '자동차세'].find((k) => reason.includes(k)) ?? (reason || '기타');
                       return (
                         <div key={c.id} className="list-item" onClick={() => setContactOpen(c)} style={{ cursor: 'pointer' }}>
                           <span className="tag over">{reasonKey}</span>
