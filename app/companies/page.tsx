@@ -110,9 +110,9 @@ export default function CompaniesPage() {
       <Sidebar />
       <div className="app">
         <header className="topbar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 600, fontSize: 14, color: 'var(--text-main)' }}>
+          <div className="topbar-title">
             <Buildings size={16} weight="fill" style={{ color: 'var(--text-sub)' }} />
-            법인 관리
+            <span>법인 관리</span>
           </div>
         </header>
 

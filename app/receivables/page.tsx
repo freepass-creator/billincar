@@ -107,6 +107,10 @@ export default function ReceivablesPage() {
       <Sidebar />
       <div className="app">
         <header className="topbar">
+          <div className="topbar-title">
+            <Warning size={16} weight="fill" style={{ color: 'var(--red-text)' }} />
+            <span>미수관리</span>
+          </div>
           <div className="topbar-search">
             <MagnifyingGlass size={14} className="icon" />
             <input
@@ -131,9 +135,6 @@ export default function ReceivablesPage() {
           </div>
 
           <div className="topbar-right">
-            <span className="topbar-sort">
-              <Warning size={12} weight="fill" style={{ color: 'var(--red-text)' }} /> 미수관리
-            </span>
             <span className="topbar-date">{today}</span>
           </div>
         </header>

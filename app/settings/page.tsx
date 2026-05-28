@@ -21,9 +21,9 @@ export default function SettingsPage() {
       <Sidebar />
       <div className="app">
         <header className="topbar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 600, fontSize: 14, color: 'var(--text-main)' }}>
+          <div className="topbar-title">
             <Gear size={16} weight="fill" style={{ color: 'var(--text-sub)' }} />
-            설정
+            <span>설정</span>
           </div>
         </header>
 

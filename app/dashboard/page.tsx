@@ -47,9 +47,9 @@ export default function DashboardPage() {
       <Sidebar />
       <div className="app">
         <header className="topbar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 600, fontSize: 14, color: 'var(--text-main)' }}>
+          <div className="topbar-title">
             <ChartBar size={16} weight="fill" style={{ color: 'var(--brand)' }} />
-            대시보드
+            <span>대시보드</span>
           </div>
           <span style={{ fontSize: 12, color: 'var(--text-weak)' }}>지표 관리 — Phase 2 (준비중)</span>
           <div style={{ flex: 1 }} />

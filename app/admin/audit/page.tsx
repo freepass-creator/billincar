@@ -76,9 +76,9 @@ export default function AuditPage() {
       <Sidebar />
       <div className="app">
         <header className="topbar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 600, fontSize: 14, color: 'var(--text-main)' }}>
+          <div className="topbar-title">
             <ClipboardText size={16} weight="fill" style={{ color: 'var(--text-sub)' }} />
-            감사 로그
+            <span>감사 로그</span>
           </div>
 
           <div className="topbar-search">

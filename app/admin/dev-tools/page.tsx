@@ -47,9 +47,9 @@ export default function DevToolsPage() {
       <Sidebar />
       <div className="app">
         <header className="topbar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 600, fontSize: 14, color: 'var(--text-main)' }}>
+          <div className="topbar-title">
             <Wrench size={16} weight="fill" style={{ color: 'var(--brand)' }} />
-            개발도구
+            <span>개발도구</span>
           </div>
         </header>
 

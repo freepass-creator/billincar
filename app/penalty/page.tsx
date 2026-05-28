@@ -405,9 +405,9 @@ export default function PenaltyPage() {
         <Sidebar />
         <div className="app">
         <header className="topbar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 600, fontSize: 14, color: 'var(--text-main)' }}>
+          <div className="topbar-title">
             <Warning size={16} weight="fill" style={{ color: 'var(--orange-text)' }} />
-            과태료 업무
+            <span>과태료 업무</span>
           </div>
           <div className="filter-bar" role="tablist" aria-label="단계" style={{ marginLeft: 16 }}>
             <button

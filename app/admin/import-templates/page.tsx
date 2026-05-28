@@ -186,9 +186,9 @@ export default function ImportTemplatesPage() {
       <Sidebar />
       <div className="app">
         <header className="topbar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 600, fontSize: 14, color: 'var(--text-main)' }}>
+          <div className="topbar-title">
             <Upload size={16} weight="fill" style={{ color: 'var(--brand)' }} />
-            계약이력 / 수납이력 일괄 업로드
+            <span>이력 업로드</span>
           </div>
         </header>
 

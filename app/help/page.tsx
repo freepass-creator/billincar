@@ -21,9 +21,9 @@ export default function HelpPage() {
       <Sidebar />
       <div className="app">
         <header className="topbar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 600, fontSize: 14, color: 'var(--text-main)' }}>
+          <div className="topbar-title">
             <BookOpen size={16} weight="fill" style={{ color: 'var(--brand)' }} />
-            사용 안내
+            <span>사용 안내</span>
           </div>
         </header>
 

@@ -689,9 +689,9 @@ export default function MigrateSheetPage() {
       <Sidebar />
       <div className="app">
         <header className="topbar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 600, fontSize: 14, color: 'var(--text-main)' }}>
+          <div className="topbar-title">
             <Database size={16} weight="fill" style={{ color: 'var(--brand)' }} />
-            구글 시트 → Firebase 마이그레이션
+            <span>DB 진단·정리</span>
           </div>
         </header>
 

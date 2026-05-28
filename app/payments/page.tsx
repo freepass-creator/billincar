@@ -299,9 +299,9 @@ export default function PaymentsPage() {
       <Sidebar />
       <div className="app">
         <header className="topbar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 600, fontSize: 14, color: 'var(--text-main)' }}>
+          <div className="topbar-title">
             <CurrencyKrw size={16} weight="fill" style={{ color: 'var(--brand)' }} />
-            계좌 관리
+            <span>계좌 관리</span>
           </div>
 
           <div className="topbar-search">
