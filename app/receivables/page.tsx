@@ -216,6 +216,69 @@ export default function ReceivablesPage() {
               </table>
             </div>
           </div>
+
+          {/* 보조 패널 — 시동제어 현황 */}
+          <div className="sidebar-stack">
+            <div className="panel">
+              <div className="panel-header">
+                <div className="panel-title">
+                  <span style={{ color: 'var(--red-text)' }}>
+                    <Power size={14} weight="fill" />
+                  </span>
+                  시동제어 현황
+                  <span className="badge" style={{ background: 'var(--red-bg)', color: 'var(--red-text)' }}>
+                    {counts['시동제어']}
+                  </span>
+                </div>
+                <div className="panel-meta danger">
+                  ₩{contracts.filter((c) => c.engineDisabled).reduce((s, c) => s + (c.unpaidAmount ?? 0), 0).toLocaleString()}
+                </div>
+              </div>
+              <div className="panel-body">
+                {counts['시동제어'] === 0 ? (
+                  <div className="empty-state">시동제어 중 차량 없음</div>
+                ) : (
+                  <div>
+                    {contracts
+                      .filter((c) => c.engineDisabled)
+                      .sort((a, b) => (b.engineDisabledAt ?? '').localeCompare(a.engineDisabledAt ?? ''))
+                      .map((c) => {
+                        const startDate = c.engineDisabledAt?.slice(0, 10) ?? '';
+                        const daysSince = startDate
+                          ? Math.max(0, Math.round((new Date(today).getTime() - new Date(startDate).getTime()) / 86400000))
+                          : 0;
+                        return (
+                          <div key={c.id} className="list-item" onClick={() => setContactOpen(c)} style={{ cursor: 'pointer' }}>
+                            <span className="tag over">제어</span>
+                            <div className="list-item-main">
+                              <div className="list-item-top">
+                                {c.customerName}
+                                <span className="text-weak text-xs">{c.company}</span>
+                              </div>
+                              <div className="list-item-sub">
+                                <span className="plate">{c.vehiclePlate}</span>
+                                <span className="text-weak">·</span>
+                                <span className="danger mono">₩{(c.unpaidAmount ?? 0).toLocaleString()}</span>
+                                {c.engineDisabledReason && (
+                                  <>
+                                    <span className="text-weak">·</span>
+                                    <span className="text-weak text-xs">{c.engineDisabledReason}</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                            <div className="list-item-right">
+                              <div className="dday danger">D+{daysSince}</div>
+                              <div className="date">{startDate}</div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
