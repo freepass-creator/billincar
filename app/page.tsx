@@ -905,7 +905,7 @@ export default function Page() {
         onUpdate={updateContract}
         onNavigate={(contractId) => setSelectedId(contractId)}
       />
-      <CreateDialog open={createOpen} onOpenChange={setCreateOpen} visibleModes={['차량', '계약']} initialMode="계약" />
+      <CreateDialog open={createOpen} onOpenChange={setCreateOpen} visibleModes={['현황', '차량', '계약']} initialMode="계약" />
       <SmsDialog open={smsOpen} onOpenChange={setSmsOpen} contracts={filteredContracts} selectedIds={selectedIds} />
 
       <ContextMenu

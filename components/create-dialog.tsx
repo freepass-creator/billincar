@@ -12,6 +12,7 @@ import { DialogRoot, DialogContent, DialogBody, DialogFooter, DialogClose } from
 import { DateInput } from '@/components/ui/date-input';
 import { parseExcelFile, type ParsedSheet, type UploadKind } from '@/lib/excel-detect';
 import { formatCurrency, cn } from '@/lib/utils';
+import { MAKERS, MODELS_BY_MAKER, buildVehicleFullName } from '@/lib/vehicle-master';
 import { MOCK_CONTRACTS } from '@/lib/mock-data';
 import type { Contract, HistoryCategory, HistoryScope } from '@/lib/types';
 import {
@@ -878,38 +879,71 @@ function VehicleManualForm({ onSubmit }: { onSubmit: () => void }) {
   const companyNames = useCompanyNames();
   const { add: addVehicle } = useVehicles();
   const [company, setCompany] = useState(companyNames[0] ?? '');
-  const [model, setModel] = useState('');
+  // 5단 분류
+  const [vehicleMaker, setVehicleMaker] = useState('');
+  const [vehicleModelLine, setVehicleModelLine] = useState('');
+  const [vehicleSubModel, setVehicleSubModel] = useState('');
+  const [vehicleVariant, setVehicleVariant] = useState('');
+  const [vehicleTrim, setVehicleTrim] = useState('');
   const [plate, setPlate] = useState('');
   const [vehicleStatus, setVehicleStatus] = useState<string>('구매대기');
+  // 제조사 스펙
+  const [exteriorColor, setExteriorColor] = useState('');
+  const [interiorColor, setInteriorColor] = useState('');
+  const [vehicleOptions, setVehicleOptions] = useState('');
+  // 등록증 정보
   const [vin, setVin] = useState('');
-  const [year, setYear] = useState('');
-  const [color, setColor] = useState('');
-  const [fuel, setFuel] = useState('');
+  const [manufacturedDate, setManufacturedDate] = useState('');
+  const [firstRegisteredDate, setFirstRegisteredDate] = useState('');
+  const [fuelType, setFuelType] = useState('');
+  const [displacementCc, setDisplacementCc] = useState('');
+  const [seatingCapacity, setSeatingCapacity] = useState('');
+  const [garage, setGarage] = useState('');
+  const [ownerName, setOwnerName] = useState('');
+  // 매입 정보
   const [purchasedDate, setPurchasedDate] = useState('');
   const [purchasePrice, setPurchasePrice] = useState('');
   const [insuranceAge, setInsuranceAge] = useState('26');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
+  const fullName = buildVehicleFullName({
+    maker: vehicleMaker, model: vehicleModelLine, subModel: vehicleSubModel,
+    variant: vehicleVariant, trim: vehicleTrim,
+  });
+
   async function handleSave() {
-    if (!model.trim() || saving) return;
+    if (!fullName || saving) return;
     setSaving(true);
     try {
       await addVehicle({
         plate: plate.trim() || '미정',
-        model: model.trim(),
+        model: fullName,
         company: (company || '기타') as import('@/lib/types').CompanyCode,
         status: vehicleStatus as import('@/lib/types').VehicleStatus,
         purchasedDate: purchasedDate || undefined,
-        notes: [
-          vin && `차대번호 ${vin}`,
-          year && `${year}년식`,
-          color && color,
-          fuel && fuel,
-          purchasePrice && `매입 ₩${Number(purchasePrice).toLocaleString('ko-KR')}`,
-          insuranceAge && `보험연령 ${insuranceAge}세`,
-          notes,
-        ].filter(Boolean).join(' / ') || undefined,
+        // 제조사 스펙
+        vehicleMaker: vehicleMaker.trim() || undefined,
+        vehicleModelLine: vehicleModelLine.trim() || undefined,
+        vehicleSubModel: vehicleSubModel.trim() || undefined,
+        vehicleVariant: vehicleVariant.trim() || undefined,
+        vehicleTrim: vehicleTrim.trim() || undefined,
+        vehicleOptions: vehicleOptions.trim() || undefined,
+        exteriorColor: exteriorColor.trim() || undefined,
+        interiorColor: interiorColor.trim() || undefined,
+        // 등록증 정보
+        vin: vin.trim() || undefined,
+        manufacturedDate: manufacturedDate || undefined,
+        firstRegisteredDate: firstRegisteredDate || undefined,
+        fuelType: fuelType.trim() || undefined,
+        displacementCc: displacementCc ? parseInt(displacementCc, 10) || undefined : undefined,
+        seatingCapacity: seatingCapacity ? parseInt(seatingCapacity, 10) || undefined : undefined,
+        garage: garage.trim() || undefined,
+        ownerName: ownerName.trim() || undefined,
+        // 매입 정보
+        purchasePrice: purchasePrice ? parseInt(purchasePrice, 10) || undefined : undefined,
+        insuranceAge: insuranceAge ? parseInt(insuranceAge, 10) || undefined : undefined,
+        notes: notes.trim() || undefined,
         createdAt: new Date().toISOString(),
       });
       onSubmit();
@@ -942,8 +976,11 @@ function VehicleManualForm({ onSubmit }: { onSubmit: () => void }) {
               ))}
             </div>
 
-            <label className="form-label">차종 *</label>
-            <input className="input" required placeholder="예: 카니발하이리무진" value={model} onChange={(e) => setModel(e.target.value)} />
+            <label className="form-label">① 제조사 *</label>
+            <input className="input" required list="dl-vh-makers" placeholder="예: 현대" value={vehicleMaker} onChange={(e) => { setVehicleMaker(e.target.value); setVehicleModelLine(''); }} />
+
+            <label className="form-label">② 모델 *</label>
+            <input className="input" required list="dl-vh-models" placeholder="예: 그랜저" value={vehicleModelLine} onChange={(e) => setVehicleModelLine(e.target.value)} />
 
             <label className="form-label">차량번호</label>
             <input
@@ -953,27 +990,79 @@ function VehicleManualForm({ onSubmit }: { onSubmit: () => void }) {
               onChange={(e) => setPlate(e.target.value)}
               style={{ width: 240 }}
             />
+            <datalist id="dl-vh-makers">
+              {MAKERS.map((m) => <option key={m} value={m} />)}
+            </datalist>
+            <datalist id="dl-vh-models">
+              {(MODELS_BY_MAKER[vehicleMaker] ?? []).map((m) => <option key={m} value={m} />)}
+            </datalist>
           </div>
         </div>
       </div>
 
-      {/* 차량 기본정보 */}
+      {/* 제조사 스펙 */}
       <div className="detail-section">
-        <div className="detail-section-header">차량 기본 정보</div>
+        <div className="detail-section-header">제조사 스펙</div>
+        <div className="detail-section-body">
+          <div className="form-grid-2">
+            <label className="form-label">③ 세부모델</label>
+            <input className="input" placeholder="예: 더 뉴 그랜저 GN7" value={vehicleSubModel} onChange={(e) => setVehicleSubModel(e.target.value)} />
+
+            <label className="form-label">④ 모델구분</label>
+            <input className="input" placeholder="예: 가솔린 3.5 AWD (연료·엔진·구동·인승)" value={vehicleVariant} onChange={(e) => setVehicleVariant(e.target.value)} />
+
+            <label className="form-label">⑤ 트림</label>
+            <input className="input" placeholder="예: 캘리그래피" value={vehicleTrim} onChange={(e) => setVehicleTrim(e.target.value)} />
+
+            <label className="form-label">외부 색상</label>
+            <input className="input" placeholder="예: 화이트 펄" value={exteriorColor} onChange={(e) => setExteriorColor(e.target.value)} />
+
+            <label className="form-label">내부 색상</label>
+            <input className="input" placeholder="예: 베이지" value={interiorColor} onChange={(e) => setInteriorColor(e.target.value)} />
+
+            <label className="form-label">선택옵션</label>
+            <input className="input" placeholder="예: 선루프, 풀옵션, 18인치휠, 내비" value={vehicleOptions} onChange={(e) => setVehicleOptions(e.target.value)} />
+          </div>
+        </div>
+      </div>
+
+      {/* 등록증 정보 */}
+      <div className="detail-section">
+        <div className="detail-section-header">자동차등록증 정보</div>
         <div className="detail-section-body">
           <div className="form-grid-2">
             <label className="form-label">차대번호</label>
             <input className="input" placeholder="예: KMHJ381ABLU123456" value={vin} onChange={(e) => setVin(e.target.value)} />
 
-            <label className="form-label">연식</label>
-            <input className="input" placeholder="예: 2024" value={year} onChange={(e) => setYear(e.target.value.replace(/[^0-9]/g, ''))} style={{ width: 120 }} />
+            <label className="form-label">제작연월일</label>
+            <DateInput value={manufacturedDate} onChange={setManufacturedDate} style={{ width: 200 }} />
 
-            <label className="form-label">색상</label>
-            <input className="input" placeholder="예: 화이트" value={color} onChange={(e) => setColor(e.target.value)} />
+            <label className="form-label">최초등록일</label>
+            <DateInput value={firstRegisteredDate} onChange={setFirstRegisteredDate} style={{ width: 200 }} />
 
-            <label className="form-label">연료</label>
-            <input className="input" placeholder="예: 가솔린 / 디젤 / 하이브리드" value={fuel} onChange={(e) => setFuel(e.target.value)} />
+            <label className="form-label">사용연료</label>
+            <input className="input" placeholder="예: 가솔린 / 디젤 / 하이브리드 / 전기 / LPG" value={fuelType} onChange={(e) => setFuelType(e.target.value)} />
 
+            <label className="form-label">배기량 (cc)</label>
+            <input className="input" placeholder="예: 3470" value={displacementCc} onChange={(e) => setDisplacementCc(e.target.value.replace(/[^0-9]/g, ''))} style={{ width: 160 }} />
+
+            <label className="form-label">승차정원</label>
+            <input className="input" placeholder="예: 5" value={seatingCapacity} onChange={(e) => setSeatingCapacity(e.target.value.replace(/[^0-9]/g, ''))} style={{ width: 120 }} />
+
+            <label className="form-label">사용본거지</label>
+            <input className="input" placeholder="등록증상 차고지 주소" value={garage} onChange={(e) => setGarage(e.target.value)} />
+
+            <label className="form-label">소유자명</label>
+            <input className="input" placeholder="등록증상 소유자명 (회사 명의)" value={ownerName} onChange={(e) => setOwnerName(e.target.value)} />
+          </div>
+        </div>
+      </div>
+
+      {/* 매입 정보 */}
+      <div className="detail-section">
+        <div className="detail-section-header">매입 정보</div>
+        <div className="detail-section-body">
+          <div className="form-grid-2">
             <label className="form-label">매입일</label>
             <DateInput value={purchasedDate} onChange={setPurchasedDate} style={{ width: 200 }} />
 
@@ -982,26 +1071,25 @@ function VehicleManualForm({ onSubmit }: { onSubmit: () => void }) {
 
             <label className="form-label">보험연령</label>
             <input className="input" value={insuranceAge} onChange={(e) => setInsuranceAge(e.target.value.replace(/[^0-9]/g, ''))} style={{ width: 120 }} />
-            <div style={{ gridColumn: 'span 2' }} />
 
             <label className="form-label" style={{ alignSelf: 'start', paddingTop: 6 }}>비고</label>
             <textarea
               className="input"
               rows={2}
-              placeholder="발주처 · 옵션 · 특이사항 등"
+              placeholder="발주처 · 특이사항 등"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              style={{ height: 'auto', padding: '8px 12px', resize: 'vertical', gridColumn: 'span 3' }}
+              style={{ height: 'auto', padding: '8px 12px', resize: 'vertical' }}
             />
           </div>
           <div style={{ marginTop: 10, fontSize: 11, color: 'var(--text-weak)' }}>
-            ↑ 필수 4개만 작성해도 등록 가능. 나머지는 상세 페이지에서 추가/수정.
+            ↑ 필수: 회사 · 차량상태 · 제조사 · 모델. 나머지는 상세 페이지에서 추가/수정 가능.
           </div>
         </div>
       </div>
 
       <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'flex-end', gap: 8, position: 'sticky', bottom: 0, background: 'var(--bg-card)', paddingTop: 8 }}>
-        <button type="submit" className="btn btn-primary" disabled={!model || saving}>
+        <button type="submit" className="btn btn-primary" disabled={!fullName || saving}>
           {saving ? <CircleNotch size={14} weight="bold" style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle size={14} />}
           {saving ? '저장 중...' : '차량 등록'}
         </button>
@@ -1730,12 +1818,39 @@ function ContractRegisterPane({
 function ContractManualForm({ onSubmit }: { onSubmit: () => void }) {
   const companyNames = useCompanyNames();
   const { add: addContract } = useContracts();
+  const { vehicles, add: addVehicle } = useVehicles();
   const [company, setCompany] = useState(companyNames[0] ?? '');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone1, setCustomerPhone1] = useState('');
   const [regNo, setRegNo] = useState('');
   const [plate, setPlate] = useState('');
-  const [model, setModel] = useState('');
+  // 5단 분류
+  const [vehicleMaker, setVehicleMaker] = useState('');
+  const [vehicleModelLine, setVehicleModelLine] = useState('');
+  const [vehicleSubModel, setVehicleSubModel] = useState('');
+  const [vehicleVariant, setVehicleVariant] = useState('');
+  const [vehicleTrim, setVehicleTrim] = useState('');
+  const [vehicleOptions, setVehicleOptions] = useState('');
+  const [exteriorColor, setExteriorColor] = useState('');
+  const [interiorColor, setInteriorColor] = useState('');
+  // 기존 차량 매칭 (차량번호 → vehicles 검색)
+  const matchedVehicle = useMemo(() => {
+    const key = plate.trim();
+    if (!key || key === '미정') return null;
+    return vehicles.find((v) => v.plate.trim() === key) ?? null;
+  }, [plate, vehicles]);
+  // 매칭되면 차량 정보 5단 자동 채움 + 잠금 (편집은 차량 페이지에서)
+  useEffect(() => {
+    if (!matchedVehicle) return;
+    setVehicleMaker(matchedVehicle.vehicleMaker ?? '');
+    setVehicleModelLine(matchedVehicle.vehicleModelLine ?? '');
+    setVehicleSubModel(matchedVehicle.vehicleSubModel ?? '');
+    setVehicleVariant(matchedVehicle.vehicleVariant ?? '');
+    setVehicleTrim(matchedVehicle.vehicleTrim ?? '');
+    setVehicleOptions(matchedVehicle.vehicleOptions ?? '');
+    setExteriorColor(matchedVehicle.exteriorColor ?? '');
+    setInteriorColor(matchedVehicle.interiorColor ?? '');
+  }, [matchedVehicle]);
   const [contractDate, setContractDate] = useState(new Date().toISOString().slice(0, 10));
   const [returnDate, setReturnDate] = useState('');
   const [monthlyRent, setMonthlyRent] = useState('');
@@ -1761,6 +1876,35 @@ function ContractManualForm({ onSubmit }: { onSubmit: () => void }) {
       const monthly = parseInt(monthlyRent.replace(/[^0-9]/g, ''), 10) || 0;
       const depositN = deposit ? parseInt(deposit.replace(/[^0-9]/g, ''), 10) || 0 : 0;
       const payDay = Math.max(1, Math.min(31, parseInt(paymentDay, 10) || 1));
+
+      // 차량 처리:
+      //  - matchedVehicle 있음 → 기존 차량 사용 (그대로)
+      //  - 차량번호 입력 + matchedVehicle 없음 → 신규 차량 자동 등록
+      //  - 차량번호 미정 → 차량 등록 안 함 (계약만)
+      const plateTrim = plate.trim();
+      if (plateTrim && plateTrim !== '미정' && !matchedVehicle) {
+        const fullName = buildVehicleFullName({
+          maker: vehicleMaker, model: vehicleModelLine, subModel: vehicleSubModel,
+          variant: vehicleVariant, trim: vehicleTrim,
+        });
+        if (fullName) {
+          await addVehicle({
+            plate: plateTrim,
+            model: fullName,
+            company: (company || '기타') as import('@/lib/types').CompanyCode,
+            status: '구매대기',
+            vehicleMaker: vehicleMaker.trim() || undefined,
+            vehicleModelLine: vehicleModelLine.trim() || undefined,
+            vehicleSubModel: vehicleSubModel.trim() || undefined,
+            vehicleVariant: vehicleVariant.trim() || undefined,
+            vehicleTrim: vehicleTrim.trim() || undefined,
+            vehicleOptions: vehicleOptions.trim() || undefined,
+            exteriorColor: exteriorColor.trim() || undefined,
+            interiorColor: interiorColor.trim() || undefined,
+            createdAt: new Date().toISOString(),
+          });
+        }
+      }
 
       // termMonths 자동 계산 (반납예정 - 계약일, 월 단위)
       let termMonths = 12;
@@ -1788,8 +1932,19 @@ function ContractManualForm({ onSubmit }: { onSubmit: () => void }) {
         customerLicenseNo: licenseNo.trim() || undefined,
         customerLicenseType: licenseType,
         vehiclePlate: plate.trim() || '미정',
-        vehicleModel: model.trim() || '미정',
+        vehicleModel: buildVehicleFullName({
+          maker: vehicleMaker, model: vehicleModelLine, subModel: vehicleSubModel,
+          variant: vehicleVariant, trim: vehicleTrim,
+        }) || '미정',
         vehicleStatus: '구매대기',
+        vehicleMaker: vehicleMaker.trim() || undefined,
+        vehicleModelLine: vehicleModelLine.trim() || undefined,
+        vehicleSubModel: vehicleSubModel.trim() || undefined,
+        vehicleVariant: vehicleVariant.trim() || undefined,
+        vehicleTrim: vehicleTrim.trim() || undefined,
+        vehicleOptions: vehicleOptions.trim() || undefined,
+        vehicleExteriorColor: exteriorColor.trim() || undefined,
+        vehicleInteriorColor: interiorColor.trim() || undefined,
         contractDate,
         returnScheduledDate: returnDate || undefined,
         termMonths,
@@ -1886,11 +2041,64 @@ function ContractManualForm({ onSubmit }: { onSubmit: () => void }) {
         <div className="detail-section-body">
           <div className="form-grid-2">
             <label className="form-label">차량번호</label>
-            <input className="input" placeholder="미정도 가능" value={plate} onChange={(e) => setPlate(e.target.value)} />
-
-            <label className="form-label">차종</label>
-            <input className="input" value={model} onChange={(e) => setModel(e.target.value)} />
+            <input className="input" placeholder="입력 시 기존 차량 자동 조회 · 미정도 가능 (신차/구매예정)" value={plate} onChange={(e) => setPlate(e.target.value)} />
           </div>
+
+          {/* 매칭 상태 배너 */}
+          {plate.trim() && plate.trim() !== '미정' && (
+            <div style={{ marginTop: 10, padding: '10px 14px', borderRadius: 4, fontSize: 12, border: '1px solid var(--line)', background: matchedVehicle ? '#ecfdf5' : '#fffbeb', color: matchedVehicle ? '#065f46' : '#92400e', display: 'flex', alignItems: 'center', gap: 8 }}>
+              {matchedVehicle ? (
+                <>
+                  <strong>✓ 기존 차량 매칭</strong>
+                  <span>{matchedVehicle.plate} · {matchedVehicle.model}</span>
+                  <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-weak)' }}>차량 정보는 차량 상세 페이지에서 수정</span>
+                </>
+              ) : (
+                <>
+                  <strong>⚠ 미등록 차량</strong>
+                  <span>저장 시 신규 차량으로 자동 등록됩니다. 아래 5단을 입력해주세요.</span>
+                </>
+              )}
+            </div>
+          )}
+          {(!plate.trim() || plate.trim() === '미정') && (
+            <div style={{ marginTop: 10, padding: '10px 14px', borderRadius: 4, fontSize: 12, border: '1px solid var(--line)', background: 'var(--bg-soft)', color: 'var(--text-weak)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <strong style={{ color: 'var(--ink)' }}>ⓘ 차량번호 미정</strong>
+              <span>신차 구매예정 — 차량은 추후 별도 등록</span>
+            </div>
+          )}
+
+          <div className="form-grid-2" style={{ marginTop: 10, opacity: matchedVehicle ? 0.6 : 1 }}>
+            <label className="form-label">① 제조사</label>
+            <input className="input" disabled={!!matchedVehicle} list="dl-makers" placeholder="예: 현대" value={vehicleMaker} onChange={(e) => { setVehicleMaker(e.target.value); setVehicleModelLine(''); }} />
+
+            <label className="form-label">② 모델</label>
+            <input className="input" disabled={!!matchedVehicle} list="dl-models" placeholder="예: 그랜저" value={vehicleModelLine} onChange={(e) => setVehicleModelLine(e.target.value)} />
+
+            <label className="form-label">③ 세부모델</label>
+            <input className="input" disabled={!!matchedVehicle} placeholder="예: 더 뉴 그랜저 GN7" value={vehicleSubModel} onChange={(e) => setVehicleSubModel(e.target.value)} />
+
+            <label className="form-label">④ 모델구분</label>
+            <input className="input" disabled={!!matchedVehicle} placeholder="예: 가솔린 3.5 AWD (연료·엔진·구동·인승)" value={vehicleVariant} onChange={(e) => setVehicleVariant(e.target.value)} />
+
+            <label className="form-label">⑤ 트림</label>
+            <input className="input" disabled={!!matchedVehicle} placeholder="예: 캘리그래피" value={vehicleTrim} onChange={(e) => setVehicleTrim(e.target.value)} />
+
+            <label className="form-label">선택옵션</label>
+            <input className="input" disabled={!!matchedVehicle} placeholder="예: 선루프, 풀옵션, 18인치휠, 내비" value={vehicleOptions} onChange={(e) => setVehicleOptions(e.target.value)} />
+
+            <label className="form-label">외부 색상</label>
+            <input className="input" disabled={!!matchedVehicle} placeholder="예: 화이트 펄" value={exteriorColor} onChange={(e) => setExteriorColor(e.target.value)} />
+
+            <label className="form-label">내부 색상</label>
+            <input className="input" disabled={!!matchedVehicle} placeholder="예: 베이지" value={interiorColor} onChange={(e) => setInteriorColor(e.target.value)} />
+          </div>
+          <datalist id="dl-makers">
+            {MAKERS.map((m) => <option key={m} value={m} />)}
+          </datalist>
+          <datalist id="dl-models">
+            {(MODELS_BY_MAKER[vehicleMaker] ?? []).map((m) => <option key={m} value={m} />)}
+          </datalist>
         </div>
       </div>
 

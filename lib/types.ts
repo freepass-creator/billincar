@@ -51,8 +51,18 @@ export type Contract = {
   driverName?: string;
   // 차량 (임베드)
   vehiclePlate: string;
-  vehicleModel: string;
+  vehicleModel: string;            // 자동 결합 풀네임 (예: '현대 아반떼 더 뉴 그랜저 GN7 가솔린 3.5 AWD 캘리그래피')
   vehicleStatus: VehicleStatus;
+  // 5단 분류 (나중에 카탈로그 cascade 도입 시 인덱스/필터로 활용)
+  vehicleMaker?: string;           // 제조사 (dropdown) — '현대'
+  vehicleModelLine?: string;       // 모델 (dropdown) — '그랜저'
+  vehicleSubModel?: string;        // 세부모델 (input) — '더 뉴 그랜저 GN7'
+  vehicleVariant?: string;         // 모델구분 (input) — '가솔린 3.5 AWD' (연료·엔진·구동·인승)
+  vehicleTrim?: string;            // 트림 (input) — '캘리그래피'
+  // 차량별 고유 입력
+  vehicleOptions?: string;         // 선택옵션 자유 입력 (예: '선루프, 풀옵션, 18인치휠')
+  vehicleExteriorColor?: string;   // 외부 색상 (예: '화이트 펄')
+  vehicleInteriorColor?: string;   // 내부 색상 (예: '베이지')
   // 기간
   contractDate: string;             // YYYY-MM-DD — 계약 체결일
   purchasedDate?: string;           // 차량 매입 완료일 (→ 등록대기)
@@ -313,8 +323,8 @@ export type Company = {
 /** 차량 마스터 — 등록증 기준 (plate + model + company만). 디테일은 나중. */
 export type Vehicle = {
   id: string;
-  plate: string;            // 차량번호 (unique)
-  model: string;            // 차명
+  plate: string;            // 차량번호 (unique) — 자동차등록번호
+  model: string;            // 풀네임 (5단 자동결합 또는 자유 입력)
   company: CompanyCode;
   status: VehicleStatus;    // 구매대기/등록대기/상품화중/상품대기 등
   purchasedDate?: string;
@@ -323,6 +333,31 @@ export type Vehicle = {
   notes?: string;
   currentContractId?: string;  // 운행중이면 계약 ID
   createdAt: string;
+
+  // ─── 제조사 스펙 (5단 분류) ───
+  vehicleMaker?: string;       // ① 제조사 — '현대'
+  vehicleModelLine?: string;   // ② 모델 — '그랜저'
+  vehicleSubModel?: string;    // ③ 세부모델 — '더 뉴 그랜저 GN7'
+  vehicleVariant?: string;     // ④ 모델구분 — '가솔린 3.5 AWD'
+  vehicleTrim?: string;        // ⑤ 트림 — '캘리그래피'
+  vehicleOptions?: string;     // 선택옵션 자유 입력
+  exteriorColor?: string;      // 외부 색상
+  interiorColor?: string;      // 내부 색상
+
+  // ─── 자동차 등록증 정보 ───
+  vin?: string;                // 차대번호
+  manufacturedDate?: string;   // 제작연월일 (YYYY-MM-DD)
+  firstRegisteredDate?: string;// 최초등록일 (YYYY-MM-DD)
+  fuelType?: string;           // 사용연료
+  displacementCc?: number;     // 배기량 (cc)
+  seatingCapacity?: number;    // 승차정원
+  garage?: string;             // 사용본거지 (차고지 주소)
+  ownerName?: string;          // 소유자명
+  registrationCertUrl?: string;// 등록증 첨부 URL (Firebase Storage 등)
+
+  // ─── 매입 정보 ───
+  purchasePrice?: number;
+  insuranceAge?: number;
 };
 
 /** 감사 로그 — 모든 변경 추적 (누가 / 언제 / 무엇을) */
