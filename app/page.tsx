@@ -151,62 +151,66 @@ function sortComparator(view: View): (a: Contract, b: Contract) => number {
       return aD.localeCompare(bD);
     };
   }
-  // 전체: 차량 라이프사이클 순서 (새 차 → 운행 → 휴차 → 매각)
-  //   1. 입고 라이프사이클 (구매대기 → 등록대기 → 상품화)
-  //   2. 운행 (만기 임박순 — 경과 → D-30 → 일반)
-  //   3. 정비/사고 (일시 중단, 운영 흐름 안)
-  //   4. 휴차 (반납 후 대기 — 오래된 순)
-  //   5. 매각 라이프사이클 (검토 → 대기 → 완료)
-  //   6. 반납/해지 (계약 종결)
+  // 전체: 액션 필요한 것 위로, 정상 운영 중은 맨 아래.
+  //   1. 만기 경과 (운행 중 만기 지난 것) — 즉시 액션
+  //   2. 만기 임박 D-30 (운행)
+  //   3. 휴차 라이프사이클 (휴차대기/휴차/매각검토 — 오래된 순)
+  //   4. 만기 임박 D-90 (연장대기/종료대기)
+  //   5. 매각 진행 (매각대기)
+  //   6. 정비/사고 — 일시 중단
+  //   7. 입고 라이프사이클 (구매대기/등록대기/상품화)
+  //   8. 매각 완료 — terminal
+  //   9. 반납/해지 — 종결
+  //  10. 계약중 (일반 운행, 만기 멀음) — 정상, 맨 아래
   return (a, b) => {
     const priority = (c: Contract): number => {
       const s = c.vehicleStatus;
-      // 입고 라이프사이클
-      if (s === '구매대기') return 11;
-      if (s === '등록대기') return 12;
-      if (s === '상품화대기' || s === '상품화중') return 13;
-      if (s === '상품대기') return 14;
-      // 운행 — D-day 따라
+      // 운행 — D-day 따라 분기 (경과/임박이 가장 위, 일반은 맨 아래)
       if (s === '운행' || s === '연장대기' || s === '종료대기') {
         const exp = getExpiryDate(c);
         if (exp) {
           const dLeft = Math.round((new Date(exp).getTime() - new Date(todayKr()).getTime()) / 86400000);
-          if (dLeft < 0) return 21;    // 만기 경과 (운행 중)
-          if (dLeft <= 30) return 22;  // D-30 이내
-          if (dLeft <= 90) return 23;  // D-90 이내 (만기임박 카테고리)
-          return 24;                    // 일반 운행
+          if (dLeft < 0) return 10;     // 만기 경과 (운행 중) — 최우선
+          if (dLeft <= 30) return 20;    // D-30
+          if (dLeft <= 90) return 40;    // D-90 (연장/종료대기 포함)
+          return 99;                      // 일반 운행 — 맨 아래
         }
-        return 24;
+        return 99;
       }
+      // 휴차/매각검토 — 결정 필요
+      if (s === '휴차대기') return 31;
+      if (s === '휴차') return 32;
+      if (s === '매각검토') return 33;
+      // 매각 진행
+      if (s === '매각대기') return 50;
       // 일시 중단
-      if (s === '정비' || s === '사고') return 31;
-      // 휴차 — 반납 후 대기
-      if (s === '휴차대기') return 41;
-      if (s === '휴차') return 42;
-      // 매각 라이프사이클
-      if (s === '매각검토') return 51;
-      if (s === '매각대기') return 52;
-      if (s === '매각') return 53;
+      if (s === '정비' || s === '사고') return 60;
+      // 입고 라이프사이클
+      if (s === '구매대기') return 71;
+      if (s === '등록대기') return 72;
+      if (s === '상품화대기' || s === '상품화중') return 73;
+      if (s === '상품대기') return 74;
       // 종결
+      if (s === '매각') return 90;
       if (c.status === '반납') return 91;
       if (c.status === '해지') return 92;
-      return 99;
+      return 95;
     };
     const pa = priority(a);
     const pb = priority(b);
     if (pa !== pb) return pa - pb;
     // 같은 그룹 내 세부 정렬:
-    // 운행 그룹 — 만기일 가까운 순
-    if (pa >= 21 && pa <= 24) {
+    // 만기 관련 운행 그룹 (10/20/40) — 만기일 가까운 순
+    if (pa === 10 || pa === 20 || pa === 40) {
       const aD = getExpiryDate(a) || '9999-12-31';
       const bD = getExpiryDate(b) || '9999-12-31';
       return aD.localeCompare(bD);
     }
     // 휴차 그룹 — idleSince 오래된 순 (asc)
-    if (pa === 41 || pa === 42) return (a.idleSince ?? '').localeCompare(b.idleSince ?? '');
-    // 매각 그룹 — 최근 변경 순 (idleSince/returnedDate 등)
-    if (pa >= 51 && pa <= 53) return (b.returnedDate ?? b.idleSince ?? '').localeCompare(a.returnedDate ?? a.idleSince ?? '');
-    // 그 외 (입고/종결) — 최근 계약 순
+    if (pa === 31 || pa === 32 || pa === 33) return (a.idleSince ?? '').localeCompare(b.idleSince ?? '');
+    // 매각/종결 — 최근 변경 순
+    if (pa >= 50 && pa <= 92) return (b.returnedDate ?? b.idleSince ?? '').localeCompare(a.returnedDate ?? a.idleSince ?? '');
+    // 일반 운행 (99) + 그 외 — 최근 계약 순
     return b.contractDate.localeCompare(a.contractDate);
   };
 }
