@@ -89,7 +89,7 @@ function matchesCompany(c: Contract, co: string): boolean {
 }
 
 /** 컬럼 정렬 키 — 수동 정렬 시 클릭한 컬럼명 */
-type SortCol = '회사' | '차량상태' | '차량번호' | '차종' | '계약자' | '연락처' | '보험연령' | '계약상태' | '계약시작' | '계약종료' | '회차' | '반납까지' | '수납상태' | '미수금' | '담당';
+type SortCol = '회사' | '차량상태' | '차량번호' | '차종' | '계약자' | '연락처' | '보험연령' | '계약상태' | '시작일' | '종료일' | '회차' | '반납까지' | '수납상태' | '미수금' | '담당';
 type SortDir = 'asc' | 'desc';
 
 const VS_ORDER: VehicleState[] = ['구매대기', '등록대기', '상품화중', '인도대기', '계약중', '휴차', '반납'];
@@ -106,10 +106,10 @@ function compareForCol(a: Contract, b: Contract, col: SortCol): number {
     case '연락처': return a.customerPhone1.localeCompare(b.customerPhone1);
     case '보험연령': return (a.insuranceAge ?? 0) - (b.insuranceAge ?? 0);
     case '계약상태': return CS_ORDER.indexOf(getContractState(a).name) - CS_ORDER.indexOf(getContractState(b).name);
-    case '계약시작': return a.contractDate.localeCompare(b.contractDate);
-    case '계약종료': {
-      const aD = getExpiryDate(a) ?? '9999-12-31';
-      const bD = getExpiryDate(b) ?? '9999-12-31';
+    case '시작일': return (resolveStartDate(a) ?? '').localeCompare(resolveStartDate(b) ?? '');
+    case '종료일': {
+      const aD = resolveEndDate(a) ?? '9999-12-31';
+      const bD = resolveEndDate(b) ?? '9999-12-31';
       return aD.localeCompare(bD);
     }
     case '회차': return (a.currentSeq ?? 0) - (b.currentSeq ?? 0);
@@ -272,6 +272,28 @@ function getContractState(c: Contract): { name: ContractState; days: number } {
   }
   // 정상 = 컴플라이언스 OK + 만기 여유 (계약 시작일부터 운영 일수)
   return { name: '정상', days: daysSince(c.contractDate, todayKr()) };
+}
+
+/**
+ * 시작일 — vehicleStatus 별로 의미가 달라짐
+ *   · 휴차/휴차대기/매각검토 → idleSince (휴차 진입일)
+ *   · 상품화 단계(상품화대기/상품화중/상품대기) → readiedDate or registeredDate (상품화 시작일)
+ *   · 그 외 (운행/연장대기/종료대기/만기임박/반납/해지) → contractDate (계약일)
+ */
+function resolveStartDate(c: Contract): string | undefined {
+  const s = c.vehicleStatus;
+  if (s === '휴차' || s === '휴차대기' || s === '매각검토') return c.idleSince ?? c.contractDate;
+  if (s === '상품화대기' || s === '상품화중' || s === '상품대기') {
+    return c.readiedDate ?? c.registeredDate ?? c.purchasedDate ?? c.contractDate;
+  }
+  return c.deliveredDate ?? c.contractDate;
+}
+
+/** 종료일 — 휴차는 idleUntil, 그 외는 returnScheduledDate */
+function resolveEndDate(c: Contract): string | undefined {
+  const s = c.vehicleStatus;
+  if (s === '휴차' || s === '휴차대기' || s === '매각검토') return c.idleUntil;
+  return c.returnScheduledDate;
 }
 
 /** 수납상태 (3종) — 결제 건전성. 휴차/매각 차량은 결제 멈춤 상태 */
@@ -692,8 +714,8 @@ export default function Page() {
                   <SortableTh col="연락처" width={116} sort={manualSort} onSort={toggleSort} />
                   <SortableTh col="보험연령" align="center" width={70} sort={manualSort} onSort={toggleSort} />
                   <SortableTh col="계약상태" align="center" width={80} sort={manualSort} onSort={toggleSort} />
-                  <SortableTh col="계약시작" align="center" width={88} sort={manualSort} onSort={toggleSort} />
-                  <SortableTh col="계약종료" align="center" width={88} sort={manualSort} onSort={toggleSort} />
+                  <SortableTh col="시작일" align="center" width={88} sort={manualSort} onSort={toggleSort} />
+                  <SortableTh col="종료일" align="center" width={88} sort={manualSort} onSort={toggleSort} />
                   <SortableTh col="회차" align="center" width={64} sort={manualSort} onSort={toggleSort} />
                   <SortableTh col="반납까지" align="center" width={76} sort={manualSort} onSort={toggleSort} />
                   <SortableTh col="수납상태" align="center" width={86} sort={manualSort} onSort={toggleSort} />
@@ -759,19 +781,29 @@ export default function Page() {
                         <td className="center">
                           <span className={`status ${cs.name}`}>{cs.name}</span>
                         </td>
-                        {/* 계약시작 — 휴차/매각검토 차량은 휴차 시작일을 표시 */}
+                        {/* 시작일 — 휴차=idleSince, 상품화 단계=readiedDate, 운행 등=계약일/인도일 */}
                         <td className="center mono dim">
-                          {(c.vehicleStatus === '휴차' || c.vehicleStatus === '휴차대기' || c.vehicleStatus === '매각검토') && c.idleSince ? (
-                            <span title={`휴차 시작 (원 계약일: ${shortDate(c.contractDate)})`}>
-                              {shortDate(c.idleSince)} <span style={{ fontSize: 10, color: 'var(--orange-text, #c2410c)' }}>휴</span>
-                            </span>
-                          ) : (
-                            shortDate(c.deliveredDate ?? c.contractDate) || <span className="muted">-</span>
-                          )}
+                          {(() => {
+                            const s = c.vehicleStatus;
+                            if ((s === '휴차' || s === '휴차대기' || s === '매각검토') && c.idleSince) {
+                              return <span title={`휴차 시작 (계약일: ${shortDate(c.contractDate)})`}>{shortDate(c.idleSince)} <span style={{ fontSize: 10, color: 'var(--orange-text, #c2410c)' }}>휴</span></span>;
+                            }
+                            if (s === '상품화대기' || s === '상품화중' || s === '상품대기') {
+                              const d = c.readiedDate ?? c.registeredDate ?? c.purchasedDate;
+                              if (d) return <span title={`상품화 진입 (계약일: ${shortDate(c.contractDate)})`}>{shortDate(d)} <span style={{ fontSize: 10, color: 'var(--brand)' }}>상</span></span>;
+                            }
+                            return shortDate(c.deliveredDate ?? c.contractDate) || <span className="muted">-</span>;
+                          })()}
                         </td>
-                        {/* 계약종료 */}
+                        {/* 종료일 — 휴차=idleUntil, 그 외=returnScheduledDate */}
                         <td className="center mono dim">
-                          {shortDate(getExpiryDate(c) ?? undefined) || <span className="muted">-</span>}
+                          {(() => {
+                            const s = c.vehicleStatus;
+                            if ((s === '휴차' || s === '휴차대기' || s === '매각검토')) {
+                              return shortDate(c.idleUntil) || <span className="muted">-</span>;
+                            }
+                            return shortDate(getExpiryDate(c) ?? undefined) || <span className="muted">-</span>;
+                          })()}
                         </td>
                         {/* 회차 */}
                         <td className="center mono dim">
