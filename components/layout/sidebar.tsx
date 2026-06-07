@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  Car, Warning, Gear, CaretLeft, CaretRight, ChartBar, CurrencyKrw, Wrench, Receipt,
+  Car, Warning, Gear, CaretLeft, CaretRight, ChartBar, CurrencyKrw, Wrench, Receipt, FileText, Folder,
 } from '@phosphor-icons/react';
 import { useAuth } from '@/lib/use-auth';
 import { useRole } from '@/lib/use-role';
@@ -12,16 +12,74 @@ import { useRole } from '@/lib/use-role';
 type SidebarProps = Record<string, never>;
 
 const COLLAPSE_KEY = 'jpkerp5_sidebar_collapsed';
+const VISIBILITY_KEY = 'jpkerp5_sidebar_visibility';
+
+/** 사이드바 메뉴 가시성 — 사용자가 설정 페이지에서 토글. 운영현황·설정은 항상 표시. */
+export type MenuKey =
+  | 'dashboard' | 'receivables'
+  | 'asset' | 'contract' | 'finance'
+  | 'penalty' | 'general'
+  | 'devtools';
+
+export const MENU_LABELS: Record<MenuKey, string> = {
+  dashboard: '대시보드',
+  receivables: '리스크 관리',
+  asset: '자산 관리',
+  contract: '계약 관리',
+  finance: '입출금 관리',
+  penalty: '과태료 업무',
+  general: '일반 관리',
+  devtools: '개발도구',
+};
+
+/** 기본 가시성 — 디폴트 모두 ON. 사용자가 설정 → 메뉴 표시에서 안 쓰는 메뉴만 끔.
+ *  운영현황은 항상 표시 (필수, 토글 불가). */
+export const DEFAULT_VISIBILITY: Record<MenuKey, boolean> = {
+  dashboard: true,
+  receivables: true,
+  asset: true,
+  contract: true,
+  finance: true,
+  penalty: true,
+  general: true,
+  devtools: true,
+};
+
+export function loadVisibility(): Record<MenuKey, boolean> {
+  if (typeof window === 'undefined') return DEFAULT_VISIBILITY;
+  try {
+    const raw = localStorage.getItem(VISIBILITY_KEY);
+    if (!raw) return DEFAULT_VISIBILITY;
+    const parsed = JSON.parse(raw) as Partial<Record<MenuKey, boolean>>;
+    return { ...DEFAULT_VISIBILITY, ...parsed };
+  } catch { return DEFAULT_VISIBILITY; }
+}
+
+export function saveVisibility(v: Record<MenuKey, boolean>) {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(VISIBILITY_KEY, JSON.stringify(v));
+  // 사이드바가 즉시 재렌더하도록 storage 이벤트 강제 디스패치
+  window.dispatchEvent(new Event('jpkerp5_visibility_changed'));
+}
 
 export function Sidebar(_props: SidebarProps = {} as SidebarProps) {
   const pathname = usePathname();
   useAuth();
   const { isMaster: master } = useRole();
   const [collapsed, setCollapsed] = useState(false);
+  const [visibility, setVisibility] = useState<Record<MenuKey, boolean>>(DEFAULT_VISIBILITY);
 
   useEffect(() => {
     const saved = typeof window !== 'undefined' ? localStorage.getItem(COLLAPSE_KEY) : null;
     if (saved === '1') setCollapsed(true);
+    setVisibility(loadVisibility());
+    function onChange() { setVisibility(loadVisibility()); }
+    window.addEventListener('jpkerp5_visibility_changed', onChange);
+    window.addEventListener('storage', onChange);
+    return () => {
+      window.removeEventListener('jpkerp5_visibility_changed', onChange);
+      window.removeEventListener('storage', onChange);
+    };
   }, []);
 
   useEffect(() => {
@@ -32,6 +90,7 @@ export function Sidebar(_props: SidebarProps = {} as SidebarProps) {
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
   const toggle = () => setCollapsed((c) => !c);
+  const show = (k: MenuKey) => visibility[k] !== false;
 
   return (
     <aside className="sidebar">
@@ -47,40 +106,80 @@ export function Sidebar(_props: SidebarProps = {} as SidebarProps) {
         </button>
       </div>
 
-      {/* 운영 (일상) */}
+      {/* ① 대시보드 (단독) */}
+      {show('dashboard') && (
+        <div className="sb-section">
+          <Link href="/dashboard" className={`sb-item ${isActive('/dashboard') ? 'active' : ''}`} title="대시보드 (지표 관리)">
+            <ChartBar size={14} weight={isActive('/dashboard') ? 'fill' : 'regular'} />
+            <span>대시보드</span>
+          </Link>
+        </div>
+      )}
+      {show('dashboard') && <div className="sb-divider" />}
+
+      {/* ② 필수 운영 — 운영현황(항상 표시) · 리스크관리 */}
       <div className="sb-section">
-        <Link href="/dashboard" className={`sb-item ${isActive('/dashboard') ? 'active' : ''}`} title="대시보드 (지표 관리)">
-          <ChartBar size={14} weight={isActive('/dashboard') ? 'fill' : 'regular'} />
-          <span>대시보드</span>
-        </Link>
-        <Link href="/" className={`sb-item ${pathname === '/' ? 'active' : ''}`} title="운영 현황 (계약 상태 일별 슬라이스)">
+        <Link href="/" className={`sb-item ${pathname === '/' ? 'active' : ''}`} title="운영 현황 (필수)">
           <Car size={14} weight={pathname === '/' ? 'fill' : 'regular'} />
           <span>운영 현황</span>
         </Link>
-        <Link href="/receivables" className={`sb-item ${isActive('/receivables') ? 'active' : ''}`} title="리스크 관리 — 미수/시동제어/검사지연 등">
-          <Warning size={14} weight={isActive('/receivables') ? 'fill' : 'regular'} />
-          <span>리스크 관리</span>
-        </Link>
-        <Link
-          href={master ? '/finance' : '/payments'}
-          className={`sb-item ${(isActive('/finance') || isActive('/payments')) ? 'active' : ''}`}
-          title="입출금 관리 — 계좌·자동이체·카드매출·법인카드"
-        >
-          <CurrencyKrw size={14} weight={(isActive('/finance') || isActive('/payments')) ? 'fill' : 'regular'} />
-          <span>입출금 관리</span>
-        </Link>
+        {show('receivables') && (
+          <Link href="/receivables" className={`sb-item ${isActive('/receivables') ? 'active' : ''}`} title="리스크 관리 — 미수/시동제어/검사지연 등">
+            <Warning size={14} weight={isActive('/receivables') ? 'fill' : 'regular'} />
+            <span>리스크 관리</span>
+          </Link>
+        )}
       </div>
 
       <div className="sb-divider" />
 
-      {/* 자산 (마스터) — 계약관리는 운영현황에서 보는 것으로 통합, 재무관리는 위 입출금으로 리네임 */}
-      {master && (
+      {/* ③ 디테일 관리 — 자산·계약·입출금 (옵셔널, 깊이 쓰는 회사) */}
+      {(show('asset') || show('contract') || show('finance')) && (
         <>
           <div className="sb-section">
-            <Link href="/asset" className={`sb-item ${isActive('/asset') ? 'active' : ''}`} title="자산 관리 — 차량 마스터, 매입·정비·보험·할부·검사·GPS·매각">
-              <Car size={14} weight={isActive('/asset') ? 'fill' : 'regular'} />
-              <span>자산 관리</span>
-            </Link>
+            {master && show('asset') && (
+              <Link href="/asset" className={`sb-item ${isActive('/asset') ? 'active' : ''}`} title="자산 관리 — 차량 마스터, 매입·정비·보험·할부·검사·GPS·매각">
+                <Car size={14} weight={isActive('/asset') ? 'fill' : 'regular'} />
+                <span>자산 관리</span>
+              </Link>
+            )}
+            {master && show('contract') && (
+              <Link href="/contract" className={`sb-item ${isActive('/contract') && pathname !== '/contract/preview' ? 'active' : ''}`} title="계약 관리 — 임차인·만기·반납·수납스케줄">
+                <FileText size={14} weight={isActive('/contract') ? 'fill' : 'regular'} />
+                <span>계약 관리</span>
+              </Link>
+            )}
+            {show('finance') && (
+              <Link
+                href={master ? '/finance' : '/payments'}
+                className={`sb-item ${(isActive('/finance') || isActive('/payments')) ? 'active' : ''}`}
+                title="입출금 관리 — 계좌·자동이체·카드매출·법인카드"
+              >
+                <CurrencyKrw size={14} weight={(isActive('/finance') || isActive('/payments')) ? 'fill' : 'regular'} />
+                <span>입출금 관리</span>
+              </Link>
+            )}
+          </div>
+          <div className="sb-divider" />
+        </>
+      )}
+
+      {/* ④ 과태료·일반 (같은 그룹) — 손익은 일반관리 안으로 통합 */}
+      {(show('penalty') || show('general')) && (
+        <>
+          <div className="sb-section">
+            {show('penalty') && (
+              <Link href="/penalty" className={`sb-item ${isActive('/penalty') ? 'active' : ''}`} title="과태료 업무">
+                <Receipt size={14} weight={isActive('/penalty') ? 'fill' : 'regular'} />
+                <span>과태료 업무</span>
+              </Link>
+            )}
+            {master && show('general') && (
+              <Link href="/general" className={`sb-item ${isActive('/general') ? 'active' : ''}`} title="일반 관리 — 직원·법인·임대·시설·차고지·증차·공문·손익">
+                <Folder size={14} weight={isActive('/general') ? 'fill' : 'regular'} />
+                <span>일반 관리</span>
+              </Link>
+            )}
           </div>
           <div className="sb-divider" />
         </>
@@ -88,19 +187,15 @@ export function Sidebar(_props: SidebarProps = {} as SidebarProps) {
 
       <div className="sb-spacer" />
 
-      {/* 관리 영역 — 일일 운영과 분리 */}
+      {/* 관리 영역 — 도구·설정 (과태료 업무는 위 디테일 묶음으로 이동) */}
       <div className="sb-foot">
-        <Link href="/penalty" className={`sb-item ${isActive('/penalty') ? 'active' : ''}`} title="과태료 업무">
-          <Receipt size={14} weight={isActive('/penalty') ? 'fill' : 'regular'} />
-          <span>과태료 업무</span>
-        </Link>
-        {master && (
+        {master && show('devtools') && (
           <Link href="/admin/dev-tools" className={`sb-item ${isActive('/admin/dev-tools') ? 'active' : ''}`} title="개발도구 — 마스터 전용">
             <Wrench size={14} weight={isActive('/admin/dev-tools') ? 'fill' : 'regular'} />
             <span>개발도구</span>
           </Link>
         )}
-        <Link href="/settings" className={`sb-item ${isActive('/settings') ? 'active' : ''}`} title="설정 — 직원·법인·사용안내·화면·계정">
+        <Link href="/settings" className={`sb-item ${isActive('/settings') ? 'active' : ''}`} title="설정 — 메뉴 표시·직원·법인·계정">
           <Gear size={14} weight={isActive('/settings') ? 'fill' : 'regular'} />
           <span>설정</span>
         </Link>

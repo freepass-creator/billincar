@@ -453,6 +453,27 @@ export type Vehicle = {
   // ─── 매입 정보 ───
   purchasePrice?: number;
   insuranceAge?: number;
+
+  // ─── 자산 관리 정보 (보험/할부/GPS) — 자산관리 표 컬럼 ───
+  insuranceCompany?: string;       // 보험사 (예: 삼성화재)
+  insurancePolicyNo?: string;      // 증권번호
+  loanCompany?: string;            // 할부사 (예: 현대캐피탈)
+  loanMonths?: number;             // 할부개월 (예: 60)
+  loanRemainingPrincipal?: number; // 잔여원금 (원)
+  loanStartDate?: string;          // 할부 개시일
+  gpsProvider?: string;            // GPS 공급사 (예: 마카롱)
+  gpsDeviceId?: string;            // GPS 단말번호
+
+  // ─── 계약사실확인서 (자동차매매·임대차 등) ───
+  contractDocUrl?: string;          // Firebase Storage URL
+  contractDocFileName?: string;     // 원본 파일명
+  contractDocUploadedAt?: string;   // ISO timestamp
+  contractDocOcrAt?: string;        // OCR 처리 시각 (재처리 추적용)
+  contractDocSeller?: string;       // 매도인 (또는 임대인)
+  contractDocBuyer?: string;        // 매수인 (또는 임차인) — 보통 회사
+  contractDocDate?: string;         // 계약 체결일 (YYYY-MM-DD)
+  contractDocPrice?: number;        // 매매가 / 임대료 (원)
+  contractDocNotes?: string;        // 비고 (특약 등)
 };
 
 /** 감사 로그 — 모든 변경 추적 (누가 / 언제 / 무엇을) */

@@ -51,6 +51,12 @@ export function useContractStore(): readonly [Contract[], () => void] {
   return [adapted, () => {}];
 }
 
+/** loading 상태 노출 — penalty 등에서 "데이터 로딩 중" 안내용 */
+export function useContractStoreStatus(): { loading: boolean; count: number } {
+  const { contracts, loading } = useContracts();
+  return { loading, count: contracts.length };
+}
+
 /** 차량번호 정규화 — 공백/하이픈/점/괄호 등 모든 비-한글·숫자 제거. */
 function normalizePlate(p: string): string {
   return (p ?? '').replace(/[^0-9가-힣]/g, '');

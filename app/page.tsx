@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { MagnifyingGlass, ArrowsClockwise, Truck, ArrowUDownLeft, Warning, X, Plus, PaperPlaneTilt, DownloadSimple, Car } from '@phosphor-icons/react';
+import { MagnifyingGlass, ArrowsClockwise, Truck, ArrowUDownLeft, Warning, X, Plus, PaperPlaneTilt, DownloadSimple, Car, Upload } from '@phosphor-icons/react';
 import { Sidebar } from '@/components/layout/sidebar';
 import { BottomBar } from '@/components/layout/bottom-bar';
 import {
@@ -288,6 +288,7 @@ export default function Page() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [createMode, setCreateMode] = useState<'차량' | '계약' | '입출금' | '현황'>('계약');
   const [smsOpen, setSmsOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [ctxMenu, setCtxMenu] = useState<{ open: boolean; x: number; y: number; row: Contract | null }>({
@@ -893,9 +894,10 @@ export default function Page() {
       <BottomBar
         left={
           <>
-            <button className="btn btn-primary" type="button" onClick={() => setCreateOpen(true)}>
+            <button className="btn btn-primary" type="button" onClick={() => setCreateOpen(true)} title="자산·계약·입출금 1건 수기 등록 (다이얼로그에서 종류 선택)">
               <Plus size={14} weight="bold" /> 신규 등록
             </button>
+            <span style={{ width: 1, height: 14, background: 'var(--border)' }} />
             <button className="btn" type="button" onClick={() => setSmsOpen(true)} title="문자 발송" disabled={selectedIds.size === 0}>
               <PaperPlaneTilt size={14} /> 문자 발송{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
             </button>
@@ -935,6 +937,10 @@ export default function Page() {
         }
         right={
           <>
+            <button className="btn" type="button" onClick={() => { setCreateMode('현황'); setCreateOpen(true); }} title="엑셀 일괄 업로드 (운영현황 형식)">
+              <Upload size={14} weight="bold" /> 운영현황 업로드
+            </button>
+            <span style={{ width: 1, height: 14, background: 'var(--border)' }} />
             <span>전체 <strong>{contracts.length}</strong>건</span>
             {selectedIds.size > 0 && (
               <>
@@ -962,7 +968,7 @@ export default function Page() {
         onUpdate={updateContract}
         onNavigate={(contractId) => setSelectedId(contractId)}
       />
-      <CreateDialog open={createOpen} onOpenChange={setCreateOpen} visibleModes={['현황', '차량', '계약']} initialMode="계약" />
+      <CreateDialog open={createOpen} onOpenChange={setCreateOpen} visibleModes={['현황', '차량', '계약', '입출금']} initialMode={createMode} />
       <SmsDialog open={smsOpen} onOpenChange={setSmsOpen} contracts={filteredContracts} selectedIds={selectedIds} />
 
       <ContextMenu

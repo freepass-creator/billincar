@@ -8,7 +8,7 @@ import { OcrUploadStage } from '@/components/ui/ocr-upload-stage';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { findContractByPlate } from '@/lib/use-contract-store';
 import { useCompanyStore } from '@/lib/use-company-store';
-import { useContractStore } from '@/lib/use-contract-store';
+import { useContractStore, useContractStoreStatus } from '@/lib/use-contract-store';
 import type { PenaltyWorkItem } from '@/lib/penalty-pdf';
 import { splitPdfPages } from '@/lib/pdf-split';
 import { fileToImageDataUrl } from '@/lib/pdf-to-image';
@@ -47,6 +47,7 @@ async function createPenaltyPlaceholder(file: File, id: string): Promise<WorkIte
 
 export function PenaltyRegisterDialog({ onCreate, open: openProp, onOpenChange, showTrigger = true }: Props) {
   const [contracts] = useContractStore();
+  const contractStatus = useContractStoreStatus();
   const [companies] = useCompanyStore();
   const findCompanyByCode = (code?: string) => code ? companies.find((c) => c.code === code) ?? null : null;
 
@@ -179,6 +180,25 @@ export function PenaltyRegisterDialog({ onCreate, open: openProp, onOpenChange, 
       )}
       <DialogContent title="고지서 등록 (자동 OCR)" size="xl">
         <div className="space-y-3" style={{ padding: '16px 20px' }}>
+          {/* 계약 마스터 로딩 안내 — OCR 매칭 정확도 위해 contracts 동기화 대기 */}
+          {contractStatus.loading && (
+            <div style={{
+              padding: '8px 12px', borderRadius: 6, background: 'var(--orange-bg)',
+              color: 'var(--orange-text)', fontSize: 11, display: 'flex', alignItems: 'center', gap: 6,
+            }}>
+              <CircleNotch size={12} weight="bold" style={{ animation: 'spin 1s linear infinite' }} />
+              계약 데이터 로딩 중 — 매칭 정확도 위해 잠시만 기다린 후 업로드해 주세요.
+            </div>
+          )}
+          {!contractStatus.loading && contractStatus.count === 0 && (
+            <div style={{
+              padding: '8px 12px', borderRadius: 6, background: 'var(--orange-bg)',
+              color: 'var(--orange-text)', fontSize: 11,
+            }}>
+              ⚠ 등록된 계약이 없습니다 — OCR 결과가 매칭되지 않을 수 있어요. 운영현황에서 먼저 계약 등록.
+            </div>
+          )}
+
           <OcrUploadStage
             progress={ocr.progress}
             busy={ocr.busy}

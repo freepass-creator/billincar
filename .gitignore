@@ -39,3 +39,6 @@ Thumbs.db
 *.pdf
 ~$*
 
+
+# 사용자 참고 자료 (실무 양식·캡처) — git 추적 X
+sources/

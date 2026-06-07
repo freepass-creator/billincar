@@ -316,6 +316,21 @@ const PENALTY_SCHEMA = {
   ],
 };
 
+const CONTRACT_DOC_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    car_number: { type: Type.STRING, nullable: true, description: '차량등록번호 (\\d{2,3}[가-힣]\\d{4}). 없으면 null' },
+    vin: { type: Type.STRING, nullable: true, description: '차대번호 (17자 영문+숫자)' },
+    car_name: { type: Type.STRING, nullable: true, description: '차명 / 모델명' },
+    seller: { type: Type.STRING, nullable: true, description: '매도인 / 임대인 — 보통 개인명 또는 회사명' },
+    buyer: { type: Type.STRING, nullable: true, description: '매수인 / 임차인 — 보통 회사명 (스위치플랜 등)' },
+    contract_date: { type: Type.STRING, nullable: true, description: '계약 체결일 YYYY-MM-DD' },
+    price: { type: Type.INTEGER, nullable: true, description: '매매가 / 임대료 (원, 콤마 제거 정수)' },
+    notes: { type: Type.STRING, nullable: true, description: '특약사항 / 비고 (있으면 1줄 요약)' },
+  },
+  required: ['car_number', 'vin', 'car_name', 'seller', 'buyer', 'contract_date', 'price', 'notes'],
+};
+
 interface TypeSpec {
   label: string;
   prompt: string;
@@ -560,6 +575,30 @@ const TYPE_SPECS: Record<string, TypeSpec> = {
 3. 라벨에 매칭되는 값이 명확하지 않으면 null.
 4. 차량번호는 위 포맷에 안 맞으면 무조건 null.`,
     schema: PENALTY_SCHEMA,
+  },
+  contract_doc: {
+    label: '계약사실확인서 (자동차매매·임대차)',
+    prompt: `이 문서는 한국 자동차매매 계약사실확인서 또는 임대차 계약서입니다.
+
+## 핵심 필드
+
+- **car_number** (차량등록번호): 정확히 \`\\d{2,3}[가-힣]\\d{4}\` 포맷. 예 "12가3456". 신차 미발급이면 null.
+- **vin** (차대번호): 17자 영문+숫자 조합. 차량번호와 다름. 라벨에 "차대번호", "VIN", "Chassis No" 등.
+- **car_name** (차명/모델): "카니발", "포터", "K5", "Model 3 Long Range" 등 등록증/계약서 표기 그대로.
+- **seller** (매도인/임대인): 보통 개인명. 회사면 회사명. 라벨 "매도인", "양도인", "임대인" 등.
+- **buyer** (매수인/임차인): 보통 회사명 (예: "스위치플랜", "이벤저", 법인명). 라벨 "매수인", "양수인", "임차인" 등.
+- **contract_date** (계약일): YYYY-MM-DD. 라벨 "계약일", "체결일", "매매일" 등.
+- **price** (매매가/임대료): 콤마 제거 정수. 원 단위. 라벨 "매매대금", "매매가", "임대료", "보증금" 등.
+- **notes** (특약/비고): 특약사항 1줄 요약. 없으면 null.
+
+## 추출 원칙
+
+1. 라벨 같은 줄 또는 바로 다음 줄 값 매칭.
+2. 차량번호는 위 포맷 안 맞으면 null.
+3. 매도인/매수인 칸은 보통 표 형태로 나뉨 — 좌측이 매도인, 우측이 매수인 (또는 위/아래).
+4. 금액은 원 단위 정수.
+5. 명확하지 않으면 null.`,
+    schema: CONTRACT_DOC_SCHEMA,
   },
 };
 

@@ -15,7 +15,7 @@ import { useMemo } from 'react';
 import {
   Phone, Warning, Gavel, Note, CurrencyKrw, PaperPlaneTilt, Power, FileText, X as XIcon,
 } from '@phosphor-icons/react';
-import { DialogRoot, DialogContent, DialogBody, DialogFooter, DialogClose } from '@/components/ui/dialog';
+import { DetailDialogShell } from '@/components/ui/detail-dialog-shell';
 import { useHistoryEntries } from '@/lib/firebase/history-store';
 import { useCompanies } from '@/lib/firebase/companies-store';
 import { displayCompanyName } from '@/lib/company-display';
@@ -78,109 +78,102 @@ export function RiskDetailDialog({
   })();
 
   return (
-    <DialogRoot open={open} onOpenChange={onOpenChange}>
-      <DialogContent title={`리스크 — ${contract.vehiclePlate} · ${contract.customerName}`}>
-        <DialogBody style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {/* HERO — 리스크 요약 */}
-          <div className="detail-hero" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div className="detail-hero-main">
-              <div className="detail-hero-name">{contract.customerName}</div>
-              <div className="detail-hero-meta">
-                <span className="plate">{contract.vehiclePlate}</span>
-                <span>·</span>
-                <span>{contract.vehicleModel}</span>
-                <span>·</span>
-                <span>{displayCompanyName(contract.company, companies)}</span>
-                <span>·</span>
-                <span className="mono">{contract.customerPhone1 || '-'}</span>
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 10, color: 'var(--text-sub)' }}>미수금</div>
-                <div className="mono" style={{ fontSize: 16, fontWeight: 700, color: 'var(--red-text)' }}>
-                  ₩{formatCurrency(contract.unpaidAmount ?? 0)}
-                </div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 10, color: 'var(--text-sub)' }}>경과</div>
-                <div className="mono" style={{ fontSize: 16, fontWeight: 700, color: overdueDays > 10 ? 'var(--red-text)' : undefined }}>
-                  D+{overdueDays}
-                </div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 10, color: 'var(--text-sub)' }}>미납회차</div>
-                <div className="mono" style={{ fontSize: 16, fontWeight: 700 }}>
-                  {contract.unpaidSeqCount ?? 0}
-                </div>
-              </div>
+    <DetailDialogShell
+      open={open}
+      onOpenChange={onOpenChange}
+      title={`리스크 — ${contract.vehiclePlate} · ${contract.customerName}`}
+      heroName={contract.customerName}
+      heroMeta={
+        <>
+          <span className="plate">{contract.vehiclePlate}</span>
+          <span>·</span>
+          <span>{contract.vehicleModel}</span>
+          <span>·</span>
+          <span>{displayCompanyName(contract.company, companies)}</span>
+          <span>·</span>
+          <span className="mono">{contract.customerPhone1 || '-'}</span>
+        </>
+      }
+      heroRight={
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 10, color: 'var(--text-sub)' }}>미수금</div>
+            <div className="mono" style={{ fontSize: 13, fontWeight: 700, color: 'var(--red-text)' }}>
+              ₩{formatCurrency(contract.unpaidAmount ?? 0)}
             </div>
           </div>
-
-          {/* 즉시 액션 — 상단 버튼 줄 */}
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            <button className="btn btn-primary" type="button" onClick={() => onAddContact?.(contract)}>
-              <Phone size={12} weight="bold" /> + 연락기록
-            </button>
-            <button className="btn" type="button" onClick={() => onEngineLock?.(contract)}>
-              <Power size={12} weight="bold" /> 시동제어
-            </button>
-            <button className="btn" type="button" onClick={() => onSendSms?.(contract)}>
-              <PaperPlaneTilt size={12} weight="bold" /> 내용증명·SMS
-            </button>
-            <button className="btn" type="button" onClick={() => onMarkDebt?.(contract)} style={{ color: 'var(--red-text)' }}>
-              <FileText size={12} weight="bold" /> 채권화
-            </button>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 10, color: 'var(--text-sub)' }}>경과</div>
+            <div className="mono" style={{ fontSize: 13, fontWeight: 700, color: overdueDays > 10 ? 'var(--red-text)' : undefined }}>
+              D+{overdueDays}
+            </div>
           </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 10, color: 'var(--text-sub)' }}>미납회차</div>
+            <div className="mono" style={{ fontSize: 13, fontWeight: 700 }}>
+              {contract.unpaidSeqCount ?? 0}
+            </div>
+          </div>
+        </div>
+      }
+    >
+      {/* 즉시 액션 — 작은 버튼 row (탭 row 와 비슷한 시각 무게) */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <button className="btn btn-sm btn-primary" type="button" onClick={() => onAddContact?.(contract)}>
+          <Phone size={11} weight="bold" /> + 연락기록
+        </button>
+        <button className="btn btn-sm" type="button" onClick={() => onEngineLock?.(contract)}>
+          <Power size={11} weight="bold" /> 시동제어
+        </button>
+        <button className="btn btn-sm" type="button" onClick={() => onSendSms?.(contract)}>
+          <PaperPlaneTilt size={11} weight="bold" /> 내용증명·SMS
+        </button>
+        <button className="btn btn-sm" type="button" onClick={() => onMarkDebt?.(contract)} style={{ color: 'var(--red-text)' }}>
+          <FileText size={11} weight="bold" /> 채권화
+        </button>
+      </div>
 
-          {/* 조치 타임라인 */}
-          <section className="detail-section">
-            <div className="detail-section-header">
-              <span className="title">조치 이력 ({timeline.length})</span>
+      {/* 조치 타임라인 */}
+      <section className="detail-section">
+        <div className="detail-section-header">
+          <span className="title">조치 이력 ({timeline.length})</span>
+        </div>
+        <div className="detail-section-body" style={{ padding: 0 }}>
+          {timeline.length === 0 ? (
+            <div className="muted center" style={{ padding: 24, fontSize: 12 }}>
+              아직 등록된 조치 이력이 없음 — 상단 + 연락기록 버튼으로 시작
             </div>
-            <div className="detail-section-body" style={{ padding: 0 }}>
-              {timeline.length === 0 ? (
-                <div className="muted center" style={{ padding: 24, fontSize: 12 }}>
-                  아직 등록된 조치 이력이 없음 — 상단 + 연락기록 버튼으로 시작
-                </div>
-              ) : (
-                <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-                  {timeline.map((h) => (
-                    <li key={h.id} style={{ display: 'flex', gap: 10, padding: '8px 12px', borderBottom: '1px solid var(--border-soft)' }}>
-                      <div style={{ width: 90, color: 'var(--text-sub)', fontSize: 11 }} className="mono">
-                        {h.date}
-                      </div>
-                      <div style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 4, padding: '1px 6px',
-                        fontSize: 10, color: categoryTone(h.category),
-                        border: `1px solid ${categoryTone(h.category)}`, borderRadius: 3,
-                        height: 18, flexShrink: 0,
-                      }}>
-                        {categoryIcon(h.category)}
-                        {h.category}
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 12, fontWeight: 500 }}>{h.title}</div>
-                        {h.description && (
-                          <div style={{ fontSize: 11, color: 'var(--text-sub)', marginTop: 2 }}>{h.description}</div>
-                        )}
-                        {h.createdBy && (
-                          <div style={{ fontSize: 10, color: 'var(--text-weak)', marginTop: 2 }}>by {h.createdBy}</div>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </section>
-        </DialogBody>
-        <DialogFooter>
-          <DialogClose asChild>
-            <button className="btn">닫기</button>
-          </DialogClose>
-        </DialogFooter>
-      </DialogContent>
-    </DialogRoot>
+          ) : (
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+              {timeline.map((h) => (
+                <li key={h.id} style={{ display: 'flex', gap: 10, padding: '8px 12px', borderBottom: '1px solid var(--border-soft)' }}>
+                  <div style={{ width: 90, color: 'var(--text-sub)', fontSize: 11 }} className="mono">
+                    {h.date}
+                  </div>
+                  <div style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4, padding: '1px 6px',
+                    fontSize: 10, color: categoryTone(h.category),
+                    border: `1px solid ${categoryTone(h.category)}`, borderRadius: 3,
+                    height: 18, flexShrink: 0,
+                  }}>
+                    {categoryIcon(h.category)}
+                    {h.category}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 500 }}>{h.title}</div>
+                    {h.description && (
+                      <div style={{ fontSize: 11, color: 'var(--text-sub)', marginTop: 2 }}>{h.description}</div>
+                    )}
+                    {h.createdBy && (
+                      <div style={{ fontSize: 10, color: 'var(--text-weak)', marginTop: 2 }}>by {h.createdBy}</div>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
+    </DetailDialogShell>
   );
 }

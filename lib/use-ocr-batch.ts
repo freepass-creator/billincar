@@ -103,10 +103,14 @@ export function useOcrBatch<W extends OcrBatchItem>(opts: Options<W>) {
           fd.append('type', O.docType);
           const auth = getFirebaseAuth();
           const user = auth?.currentUser;
-          const idToken = user ? await user.getIdToken() : '';
+          if (!user) {
+            // 직원이 헤매지 않도록 명확한 안내 — 401 거부 메시지 대신
+            throw new Error('로그인이 필요합니다. 우측 상단에서 로그인 후 다시 시도하세요.');
+          }
+          const idToken = await user.getIdToken();
           const res = await fetch('/api/ocr/extract', {
             method: 'POST',
-            headers: idToken ? { Authorization: `Bearer ${idToken}` } : undefined,
+            headers: { Authorization: `Bearer ${idToken}` },
             body: fd,
           });
           const json = await res.json();

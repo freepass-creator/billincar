@@ -9,6 +9,7 @@ import {
   Pencil, FloppyDisk,
 } from '@phosphor-icons/react';
 import { DialogRoot, DialogContent, DialogBody, DialogFooter, DialogClose } from '@/components/ui/dialog';
+import { DetailDialogShell } from '@/components/ui/detail-dialog-shell';
 import { DateInput } from '@/components/ui/date-input';
 import type { Contract, VehicleStatus, PaymentScheduleInline, PaymentEntry, ScheduleStatus } from '@/lib/types';
 import { formatCurrency, formatDateFull, daysSince } from '@/lib/utils';
@@ -47,45 +48,61 @@ export function ContractDetailDialog({
   if (!contract) return null;
 
   return (
-    <DialogRoot open={open} onOpenChange={onOpenChange}>
-      <DialogContent title={`상세 정보 — ${contract.vehiclePlate} · ${contract.customerName}`}>
-        <DialogBody className="p-0" style={{ display: 'flex', flexDirection: 'column' }}>
-          {/* HERO — 탭과 무관하게 항상 표시 */}
-          <div style={{ padding: 16, paddingBottom: 0 }}>
-            <DetailHero c={contract} />
-          </div>
+    <ContractDetailShell contract={contract} open={open} onOpenChange={onOpenChange} onUpdate={onUpdate} />
+  );
+}
 
-          <Tabs.Root defaultValue="vehicleStatus" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, marginTop: 14 }}>
-            <Tabs.List className="tabs-list">
-              <Tabs.Trigger value="vehicleStatus" className="tabs-trigger">차량상태</Tabs.Trigger>
-              <Tabs.Trigger value="vehicleSpec" className="tabs-trigger">차량정보</Tabs.Trigger>
-              <Tabs.Trigger value="contract" className="tabs-trigger">계약정보</Tabs.Trigger>
-              <Tabs.Trigger value="payment" className="tabs-trigger">수납내역</Tabs.Trigger>
-              <Tabs.Trigger value="vehiclePayments" className="tabs-trigger">차량 수납이력</Tabs.Trigger>
-              <Tabs.Trigger value="documents" className="tabs-trigger">서류 검증</Tabs.Trigger>
-              <Tabs.Trigger value="vehicleHistory" className="tabs-trigger">차량이력</Tabs.Trigger>
-              <Tabs.Trigger value="contractHistory" className="tabs-trigger">계약이력</Tabs.Trigger>
-            </Tabs.List>
+/** Shell wrapping — DetailDialogShell 에 props 전달. */
+function ContractDetailShell({
+  contract, open, onOpenChange, onUpdate,
+}: {
+  contract: Contract;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  onUpdate: (u: Contract) => void;
+}) {
+  const { companies } = useCompanies();
+  const companyDisplay = displayCompanyName(contract.company, companies);
+  const vs = getVehicleState(contract);
+  const cs = getContractState(contract);
+  const ps = getPaymentState(contract);
 
-            <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
-              <Tabs.Content value="vehicleSpec"><VehicleSpecTab c={contract} onUpdate={onUpdate} /></Tabs.Content>
-              <Tabs.Content value="vehicleStatus"><VehicleStatusTab c={contract} onUpdate={onUpdate} /></Tabs.Content>
-              <Tabs.Content value="contract"><ContractInfoTab c={contract} onUpdate={onUpdate} /></Tabs.Content>
-              <Tabs.Content value="payment"><PaymentTab c={contract} onUpdate={onUpdate} /></Tabs.Content>
-              <Tabs.Content value="vehiclePayments"><VehiclePaymentsTab c={contract} /></Tabs.Content>
-              <Tabs.Content value="documents"><DocumentsTab c={contract} onUpdate={onUpdate} /></Tabs.Content>
-              <Tabs.Content value="vehicleHistory"><HistoryListTab scope="vehicle" c={contract} onNavigate={onNavigate} /></Tabs.Content>
-              <Tabs.Content value="contractHistory"><HistoryListTab scope="contract" c={contract} onNavigate={onNavigate} /></Tabs.Content>
-            </div>
-          </Tabs.Root>
-        </DialogBody>
-        <DialogFooter>
-          <DialogClose asChild>
-            <button className="btn">닫기</button>
-          </DialogClose>
-        </DialogFooter>
-      </DialogContent>
-    </DialogRoot>
+  return (
+    <DetailDialogShell
+      open={open}
+      onOpenChange={onOpenChange}
+      title={`상세 정보 — ${contract.vehiclePlate} · ${contract.customerName}`}
+      heroName={contract.customerName}
+      heroMeta={
+        <>
+          <span className="plate">{contract.vehiclePlate}</span>
+          <span>·</span>
+          <span>{contract.vehicleModel}</span>
+          <span>·</span>
+          <span>{companyDisplay}</span>
+          <span>·</span>
+          <span>{contract.contractNo}</span>
+          <span>·</span>
+          <span>담당 {contract.manager || '-'}</span>
+        </>
+      }
+      heroRight={
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span className="dim" style={{ fontSize: 10 }}>차량</span>
+          <span className={`status ${vs.name}`}>{vs.name}</span>
+          <span className="dim" style={{ fontSize: 10, marginLeft: 6 }}>계약</span>
+          <span className={`status ${cs.name}`}>{cs.name}</span>
+          <span className="dim" style={{ fontSize: 10, marginLeft: 6 }}>수납</span>
+          <span className={`status ${ps.name}`}>{ps.name}</span>
+        </div>
+      }
+      tabs={[
+        { value: 'status', label: '상태', content: <VehicleStatusTab c={contract} onUpdate={onUpdate} /> },
+        { value: 'asset', label: '자산', content: <VehicleSpecTab c={contract} onUpdate={onUpdate} /> },
+        { value: 'contract', label: '계약', content: <ContractInfoTab c={contract} onUpdate={onUpdate} /> },
+        { value: 'payment', label: '수납', content: <PaymentTab c={contract} onUpdate={onUpdate} /> },
+      ]}
+    />
   );
 }
 
@@ -617,7 +634,7 @@ function VehicleStatusTab({ c, onUpdate }: { c: Contract; onUpdate: (u: Contract
             <div style={{ fontSize: 11, color: 'var(--text-sub)', marginBottom: 8, fontWeight: 500 }}>
               임시배차 — 원본 차량 ({c.vehiclePlate} {c.vehicleModel}) 대신 출고할 차량
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: '8px 12px', alignItems: 'center', marginBottom: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '96px 1fr', gap: '8px 12px', alignItems: 'center', marginBottom: 10 }}>
               <label className="form-label">대체 차량번호 *</label>
               <input className="input" placeholder="예: 109호5678" value={tempPlate} onChange={(e) => setTempPlate(e.target.value)} style={{ width: 240 }} />
               <label className="form-label">대체 차종</label>
@@ -664,8 +681,8 @@ function VehicleStatusTab({ c, onUpdate }: { c: Contract; onUpdate: (u: Contract
           </div>
         )}
 
-        {/* 체크리스트 — 단계 진행 항목 */}
-        {checklist && (
+        {/* 체크리스트 — 단계 진행 항목. items 비어있으면 박스 자체 렌더 X (만기경과 stage 등) */}
+        {checklist && checklist.items.length > 0 && (
           <div className="checklist" style={{ marginBottom: 12 }}>
             <div className="checklist-header">
               <span>{checklist.label}</span>
@@ -733,7 +750,7 @@ function VehicleStatusTab({ c, onUpdate }: { c: Contract; onUpdate: (u: Contract
         {renewPicker && (
           <div style={{ padding: 12, background: 'var(--bg-sunken)', borderRadius: 6, marginBottom: 12 }}>
             <div style={{ fontSize: 11, color: 'var(--text-sub)', marginBottom: 8, fontWeight: 500 }}>연장 처리 — 새 반납예정일 / 월대여료</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: '8px 12px', alignItems: 'center', marginBottom: 10 }}>
+            <div className="form-grid-2" style={{ marginBottom: 16 }}>
               <label className="form-label">새 반납예정일 *</label>
               <DateInput value={renewNewReturn} onChange={setRenewNewReturn} style={{ width: 200 }} />
               <label className="form-label">월대여료 (선택)</label>
@@ -757,7 +774,7 @@ function VehicleStatusTab({ c, onUpdate }: { c: Contract; onUpdate: (u: Contract
         {endPicker && (
           <div style={{ padding: 12, background: 'var(--bg-sunken)', borderRadius: 6, marginBottom: 12 }}>
             <div style={{ fontSize: 11, color: 'var(--text-sub)', marginBottom: 8, fontWeight: 500 }}>종료 결정 — 반납 약속일</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: '8px 12px', alignItems: 'center', marginBottom: 10 }}>
+            <div className="form-grid-2" style={{ marginBottom: 16 }}>
               <label className="form-label">반납 약속일 *</label>
               <DateInput value={endPromisedDate} onChange={setEndPromisedDate} style={{ width: 200 }} />
               <label className="form-label">메모</label>
@@ -953,8 +970,8 @@ function VehicleStatusTab({ c, onUpdate }: { c: Contract; onUpdate: (u: Contract
             </>
           )}
 
-          {/* 되돌리기 — 잘못 누른 경우 정정 */}
-          {canRevert && (
+          {/* 되돌리기 — 잘못 누른 경우 정정. 단, 만기임박/만기경과 stage 는 진행 버튼이 없어 혼자 떠 보이므로 숨김 */}
+          {canRevert && stage !== '만기임박' && stage !== '만기경과' && (
             <button
               className="btn btn-ghost"
               onClick={revertStage}
@@ -1093,7 +1110,7 @@ function VehicleLocationEditor({ c, onUpdate }: { c: Contract; onUpdate: (u: Con
           {changed && newLocation && <><span className="dim">→</span> <strong style={{ color: 'var(--brand)' }}>{newLocation}</strong> <span style={{ fontSize: 10, color: 'var(--orange-text, #c2410c)' }}>이력 자동 기록</span></>}
         </div>
       )}
-      <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr', gap: '6px 10px', fontSize: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '96px 1fr', gap: '6px 10px', fontSize: 12 }}>
         <label style={{ alignSelf: 'center', color: 'var(--text-weak)' }}>{oldLocation ? '이동 위치' : '현재 위치'}</label>
         <input className="input" autoFocus placeholder="예: 본사 차고지 B-12 / 분당 주차장 / 정비소" value={draft.idleLocation} onChange={(e) => setDraft({ ...draft, idleLocation: e.target.value })} />
         <label style={{ alignSelf: 'center', color: 'var(--text-weak)' }}>담당 연락처</label>
@@ -1606,6 +1623,7 @@ function ScheduleTable({ c, onUpdate }: { c: Contract; onUpdate: (u: Contract) =
   const [addDate, setAddDate] = useState(todayKr());
   const [addAmount, setAddAmount] = useState('');
   const [addMemo, setAddMemo] = useState('');
+  const [addSource, setAddSource] = useState<PaymentEntry['source']>('수동');
   const [addReason, setAddReason] = useState<DiscountReason>('자가조치');
 
   // legacy 회차 (payments 없음, paidAmount만 있음) → migrate-on-read
@@ -1737,7 +1755,7 @@ function ScheduleTable({ c, onUpdate }: { c: Contract; onUpdate: (u: Contract) =
         s.payments.push({
           date: addDate || today,
           amount: apply,
-          source: '수동',
+          source: addSource,
           memo: i > startIdx ? `${addMemo || '선납'} (선납 from ${addOpenSeq}회차)` : (addMemo || undefined),
           at: new Date().toISOString(),
         });
@@ -1793,7 +1811,28 @@ function ScheduleTable({ c, onUpdate }: { c: Contract; onUpdate: (u: Contract) =
     persist(next);
   }
 
+  // 미수 우선 — 없으면 다음 예정 회차에 자동 입금 폼 열기
+  const nextOpenSeq = useMemo(() => {
+    const overdue = schedulesNorm.find((s) => s.status === '연체' || s.status === '부분납');
+    if (overdue) return overdue.seq;
+    const pending = schedulesNorm.find((s) => s.status === '예정');
+    return pending?.seq;
+  }, [schedulesNorm]);
+
   return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {nextOpenSeq != null && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={() => startAdd(nextOpenSeq, 'payment')}
+            title={`${nextOpenSeq}회차에 입금 추가 — 초과분은 다음 회차로 자동 선납`}
+          >
+            <Plus size={11} weight="bold" /> 수납 추가
+          </button>
+        </div>
+      )}
     <table className="table">
       <thead>
         <tr>
@@ -1871,8 +1910,29 @@ function ScheduleTable({ c, onUpdate }: { c: Contract; onUpdate: (u: Contract) =
                       <span style={{ fontSize: 11, fontWeight: 600, color: addMode === 'discount' ? 'var(--red-text)' : 'var(--text-sub)' }}>
                         {addMode === 'discount' ? '청구할인 추가' : '입금 추가'}
                       </span>
-                      <span style={{ fontSize: 11, color: 'var(--text-sub)' }}>{addMode === 'discount' ? '할인일' : '입금일'}</span>
+
+                      {/* 회차 — 다른 회차로 변경 가능 */}
+                      {addMode === 'payment' && (
+                        <>
+                          <span style={{ fontSize: 11, color: 'var(--text-sub)' }}>회차</span>
+                          <select
+                            className="input"
+                            value={addOpenSeq ?? r.seq}
+                            onChange={(e) => setAddOpenSeq(Number(e.target.value))}
+                            style={{ width: 100 }}
+                          >
+                            {schedulesNorm.filter((s) => s.status !== '면제').map((s) => (
+                              <option key={s.seq} value={s.seq}>
+                                {s.seq}회 ({s.status})
+                              </option>
+                            ))}
+                          </select>
+                        </>
+                      )}
+
+                      <span style={{ fontSize: 11, color: 'var(--text-sub)', marginLeft: 6 }}>{addMode === 'discount' ? '할인일' : '입금일'}</span>
                       <DateInput value={addDate} onChange={setAddDate} style={{ width: 150 }} />
+
                       <span style={{ fontSize: 11, color: 'var(--text-sub)', marginLeft: 6 }}>금액</span>
                       <input
                         type="text" className="input mono" placeholder="원 단위"
@@ -1881,6 +1941,26 @@ function ScheduleTable({ c, onUpdate }: { c: Contract; onUpdate: (u: Contract) =
                         style={{ width: 140 }}
                         autoFocus
                       />
+
+                      {/* 출처 — 입금 모드에만 */}
+                      {addMode === 'payment' && (
+                        <>
+                          <span style={{ fontSize: 11, color: 'var(--text-sub)', marginLeft: 6 }}>출처</span>
+                          <select
+                            className="input"
+                            value={addSource}
+                            onChange={(e) => setAddSource(e.target.value as PaymentEntry['source'])}
+                            style={{ width: 90 }}
+                            title="입금이 어디서 들어왔는지 — 카드·계좌 매칭 시 자동 출처 지정됨"
+                          >
+                            <option value="수동">수동</option>
+                            <option value="계좌">계좌</option>
+                            <option value="카드">카드</option>
+                            <option value="현금">현금</option>
+                          </select>
+                        </>
+                      )}
+
                       {addMode === 'discount' && (
                         <>
                           <span style={{ fontSize: 11, color: 'var(--text-sub)', marginLeft: 6 }}>사유</span>
@@ -1893,11 +1973,12 @@ function ScheduleTable({ c, onUpdate }: { c: Contract; onUpdate: (u: Contract) =
                           </select>
                         </>
                       )}
+
                       <span style={{ fontSize: 11, color: 'var(--text-sub)', marginLeft: 6 }}>메모</span>
                       <input
-                        type="text" className="input" placeholder={addMode === 'discount' ? '예: 타이어 자가교체 차감' : '현금/외부결제 등'}
+                        type="text" className="input" placeholder={addMode === 'discount' ? '예: 타이어 자가교체 차감' : '입금자명 / 거래 메모'}
                         value={addMemo} onChange={(e) => setAddMemo(e.target.value)}
-                        style={{ width: 200 }}
+                        style={{ width: 180 }}
                       />
                       <button className="btn btn-sm btn-primary" type="button" onClick={commitAdd}>
                         <CheckCircle size={11} /> 저장
@@ -1986,6 +2067,7 @@ function ScheduleTable({ c, onUpdate }: { c: Contract; onUpdate: (u: Contract) =
         })}
       </tbody>
     </table>
+    </div>
   );
 }
 
@@ -2474,7 +2556,7 @@ function DocumentsTab({ c, onUpdate }: { c: Contract; onUpdate: (u: Contract) =>
     const label = kind === '보험증권' ? '보험가입증명서' : kind;
     return (
       <div style={{
-        display: 'grid', gridTemplateColumns: '120px 1fr auto', alignItems: 'center',
+        display: 'grid', gridTemplateColumns: '96px 1fr auto', alignItems: 'center',
         gap: 10, padding: '8px 12px',
         background: url ? 'var(--bg-card)' : 'var(--bg-sunken)',
         border: '1px solid var(--border-soft)',
@@ -2606,7 +2688,7 @@ function DocumentsTab({ c, onUpdate }: { c: Contract; onUpdate: (u: Contract) =>
                       {d.issues.map((iss, idx) => (
                         <div key={idx} style={{
                           display: 'grid',
-                          gridTemplateColumns: '100px 1fr',
+                          gridTemplateColumns: '96px 1fr',
                           gap: 8,
                           padding: '4px 0',
                           fontSize: 11,
@@ -2757,7 +2839,7 @@ function LicenseVerifySection({ c, onUpdate }: { c: Contract; onUpdate: (u: Cont
   return (
     <Section icon={<User size={12} weight="duotone" />} title="면허검증 — 한국교통안전공단 RIMS">
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr 130px auto auto', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '96px 1fr 130px auto auto', gap: 8, alignItems: 'center' }}>
           <div style={{ fontSize: 11, color: 'var(--text-weak)' }}>
             면허번호
             {licenseNo && (

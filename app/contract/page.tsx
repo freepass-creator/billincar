@@ -15,9 +15,9 @@ import { useRouter } from 'next/navigation';
 import { FileText, MagnifyingGlass, ArrowLeft } from '@phosphor-icons/react';
 import { Sidebar } from '@/components/layout/sidebar';
 import { BottomBar } from '@/components/layout/bottom-bar';
-import { SubNav, CONTRACT_SUB } from '@/components/layout/sub-nav';
 import { useContracts } from '@/lib/firebase/contracts-store';
 import { useCompanies } from '@/lib/firebase/companies-store';
+import { ContractDetailDialog } from '@/components/contract-detail-dialog';
 import { useRole } from '@/lib/use-role';
 import { buildCompanyOptions, matchesCompanyFilter } from '@/lib/filter-helpers';
 import { displayCompanyName } from '@/lib/company-display';
@@ -30,8 +30,9 @@ export default function ContractPage() {
     if (!roleLoading && !master) router.replace('/');
   }, [master, roleLoading, router]);
 
-  const { contracts } = useContracts();
+  const { contracts, update: updateContract } = useContracts();
   const { companies: companyMaster } = useCompanies();
+  const [openId, setOpenId] = useState<string | null>(null);
 
   const [search, setSearch] = useState('');
   const [companyFilter, setCompanyFilter] = useState('all');
@@ -104,26 +105,14 @@ export default function ContractPage() {
             <button type="button" className={`chip ${groupBy === 'list' ? 'active' : ''}`} onClick={() => setGroupBy('list')}>전체 리스트</button>
             <button type="button" className={`chip ${groupBy === 'customer' ? 'active' : ''}`} onClick={() => setGroupBy('customer')}>계약자별 묶음</button>
           </div>
-          {/* 퀵필터 — 계약 상태 chip */}
+          {/* 퀵필터 — 계약 디테일 기능 진입 chip (sub-page 실존하는 것만) */}
           <div className="quick-filters">
-            {(['all','운행','대기','반납','해지','채권'] as const).map((s) => {
-              const count = s === 'all' ? contracts.length : contracts.filter((c) => c.status === s).length;
-              const tone = s === '채권' ? 'chip-tone-red' : s === '해지' ? 'chip-tone-gray' : s === '운행' ? 'chip-tone-brand' : '';
-              return (
-                <button
-                  key={s}
-                  type="button"
-                  className={`chip ${tone} ${statusFilter === s ? 'active' : ''}`}
-                  onClick={() => setStatusFilter(s)}
-                >
-                  {s === 'all' ? '전체' : s}<span className="chip-count">{count}</span>
-                </button>
-              );
-            })}
+            <Link href="/contract/expire" className="chip">만기임박</Link>
+            <Link href="/contract/return" className="chip">반납</Link>
+            <Link href="/contract/overdue" className="chip">미수금</Link>
+            <Link href="/contract/idle" className="chip">휴차</Link>
           </div>
         </header>
-
-        <SubNav items={CONTRACT_SUB} />
 
         <div className="dashboard" style={{ gridTemplateColumns: '1fr' }}>
           <div className="panel">
@@ -148,7 +137,7 @@ export default function ContractPage() {
                     {filtered.length === 0 ? (
                       <tr><td colSpan={10} className="muted center" style={{ padding: 32 }}>계약 없음</td></tr>
                     ) : filtered.map((c) => (
-                      <tr key={c.id} onClick={() => router.push(`/contract/${c.id}`)} style={{ cursor: 'pointer' }}>
+                      <tr key={c.id} onDoubleClick={() => setOpenId(c.id)} style={{ cursor: 'pointer' }}>
                         <td className="dim">{c.company ? displayCompanyName(c.company, companyMaster) : '-'}</td>
                         <td className="mono">{c.contractNo}</td>
                         <td className="mono">{c.vehiclePlate}</td>
@@ -214,6 +203,13 @@ export default function ContractPage() {
             </>
           }
           right={null}
+        />
+
+        <ContractDetailDialog
+          contract={openId ? contracts.find((c) => c.id === openId) ?? null : null}
+          open={openId != null}
+          onOpenChange={(v) => !v && setOpenId(null)}
+          onUpdate={(updated) => { void updateContract(updated); }}
         />
       </div>
     </div>

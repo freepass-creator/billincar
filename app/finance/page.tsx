@@ -7,19 +7,17 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Bank, MagnifyingGlass, ArrowLeft } from '@phosphor-icons/react';
+import { Bank, MagnifyingGlass, ArrowLeft, Plus } from '@phosphor-icons/react';
 import { Sidebar } from '@/components/layout/sidebar';
 import { BottomBar } from '@/components/layout/bottom-bar';
-import { SubNav, FINANCE_SUB } from '@/components/layout/sub-nav';
 import { useBankTx } from '@/lib/firebase/transactions-store';
 import { useContracts } from '@/lib/firebase/contracts-store';
 import { useCompanies } from '@/lib/firebase/companies-store';
 import { useRole } from '@/lib/use-role';
 import { buildCompanyOptions, matchesCompanyFilter, resolveCompanyKey } from '@/lib/filter-helpers';
 import { displayCompanyName } from '@/lib/company-display';
-import { formatCurrency } from '@/lib/utils';
+import { CreateDialog } from '@/components/create-dialog';
 
 const fmtNum = (v: number) => v ? v.toLocaleString('ko-KR') : '';
 
@@ -37,6 +35,46 @@ export default function FinancePage() {
   const [search, setSearch] = useState('');
   const [companyFilter, setCompanyFilter] = useState('all');
   const [directionFilter, setDirectionFilter] = useState<'all' | 'deposit' | 'withdraw'>('all');
+  const [viewMode, setViewMode] = useState<'account' | 'autopay' | 'card' | 'corpcard' | 'daily'>('account');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [periodMode, setPeriodMode] = useState<'month' | 'quarter' | 'year'>('month');
+  const [periodAnchor, setPeriodAnchor] = useState<{ y: number; m: number }>(() => {
+    const d = new Date();
+    return { y: d.getFullYear(), m: d.getMonth() + 1 };
+  });
+
+  function shiftPeriod(delta: number) {
+    setPeriodAnchor((p) => {
+      const step = periodMode === 'month' ? 1 : periodMode === 'quarter' ? 3 : 12;
+      const d = new Date(p.y, p.m - 1 + step * delta, 1);
+      return { y: d.getFullYear(), m: d.getMonth() + 1 };
+    });
+  }
+  function gotoCurrent() {
+    const d = new Date();
+    setPeriodAnchor({ y: d.getFullYear(), m: d.getMonth() + 1 });
+  }
+  const periodLabel = (() => {
+    if (periodMode === 'year') return `${periodAnchor.y}`;
+    if (periodMode === 'quarter') {
+      const q = Math.floor((periodAnchor.m - 1) / 3) + 1;
+      return `${periodAnchor.y} Q${q}`;
+    }
+    return `${periodAnchor.y}-${String(periodAnchor.m).padStart(2, '0')}`;
+  })();
+  function inPeriod(yyyymmdd: string): boolean {
+    if (!yyyymmdd) return false;
+    const [yStr, mStr] = yyyymmdd.split('-');
+    const y = Number(yStr), m = Number(mStr);
+    if (Number.isNaN(y) || Number.isNaN(m)) return false;
+    if (periodMode === 'year') return y === periodAnchor.y;
+    if (periodMode === 'quarter') {
+      const qa = Math.floor((periodAnchor.m - 1) / 3);
+      const qy = Math.floor((m - 1) / 3);
+      return y === periodAnchor.y && qy === qa;
+    }
+    return y === periodAnchor.y && m === periodAnchor.m;
+  }
 
   const contractById = useMemo(() => new Map(contracts.map((c) => [c.id, c])), [contracts]);
 
@@ -52,6 +90,8 @@ export default function FinancePage() {
         if (directionFilter === 'deposit' && !((t.amount ?? 0) > 0)) return false;
         if (directionFilter === 'withdraw' && !((t.withdraw ?? 0) > 0)) return false;
         if (!matchesCompanyFilter(resolveCompanyKey(t, contractById), companyFilter)) return false;
+        // 기간 필터 (월/분기/연)
+        if (!inPeriod((t.txDate ?? '').slice(0, 10))) return false;
         if (q) {
           const c = t.matchedContractId ? contractById.get(t.matchedContractId) : undefined;
           const hay = `${t.counterparty ?? ''} ${t.memo ?? ''} ${t.account ?? ''} ${t.subject ?? ''} ${c?.contractNo ?? ''} ${c?.customerName ?? ''}`.toLowerCase();
@@ -60,16 +100,8 @@ export default function FinancePage() {
         return true;
       })
       .sort((a, b) => (b.txDate ?? '').localeCompare(a.txDate ?? ''));
-  }, [bankTx, search, directionFilter, companyFilter, contractById]);
+  }, [bankTx, search, directionFilter, companyFilter, contractById, periodMode, periodAnchor]);
 
-  const totals = useMemo(() => {
-    let inSum = 0, outSum = 0;
-    for (const t of filtered) {
-      inSum += t.amount ?? 0;
-      outSum += t.withdraw ?? 0;
-    }
-    return { inSum, outSum };
-  }, [filtered]);
 
   return (
     <div className="layout">
@@ -102,30 +134,51 @@ export default function FinancePage() {
                 <option key={co} value={co}>{displayCompanyName(co, companyMaster)}</option>
               ))}
             </select>
+            <select
+              className="input-compact" data-w="sm"
+              value={directionFilter}
+              onChange={(e) => setDirectionFilter(e.target.value as 'all' | 'deposit' | 'withdraw')}
+              title="입출금 방향"
+            >
+              <option value="all">입출금</option>
+              <option value="deposit">입금만</option>
+              <option value="withdraw">출금만</option>
+            </select>
           </div>
-          {/* 퀵필터 — 입출금 방향 chip + 금액합계 */}
+          {/* 퀵필터 — view 토글 + 기간 토글 + 이동 */}
           <div className="quick-filters">
-            <button type="button" className={`chip ${directionFilter === 'all' ? 'active' : ''}`} onClick={() => setDirectionFilter('all')}>
-              전체<span className="chip-count">{bankTx.length}</span>
-            </button>
-            <button type="button" className={`chip chip-tone-brand ${directionFilter === 'deposit' ? 'active' : ''}`} onClick={() => setDirectionFilter('deposit')}>
-              입금<span className="chip-count">{bankTx.filter((t) => (t.amount ?? 0) > 0).length}</span>
-            </button>
-            <button type="button" className={`chip chip-tone-red ${directionFilter === 'withdraw' ? 'active' : ''}`} onClick={() => setDirectionFilter('withdraw')}>
-              출금<span className="chip-count">{bankTx.filter((t) => (t.withdraw ?? 0) > 0).length}</span>
-            </button>
-          </div>
-          <div className="topbar-stats">
-            <span style={{ color: 'var(--green-text)' }}>입금<strong className="mono">₩{formatCurrency(totals.inSum)}</strong></span>
-            <span style={{ color: 'var(--red-text)' }}>출금<strong className="mono">₩{formatCurrency(totals.outSum)}</strong></span>
+            <button type="button" className={`chip ${viewMode === 'account' ? 'active' : ''}`} onClick={() => setViewMode('account')}>계좌</button>
+            <button type="button" className={`chip ${viewMode === 'autopay' ? 'active' : ''}`} onClick={() => setViewMode('autopay')}>자동이체</button>
+            <button type="button" className={`chip ${viewMode === 'card' ? 'active' : ''}`} onClick={() => setViewMode('card')}>카드매출</button>
+            <button type="button" className={`chip ${viewMode === 'corpcard' ? 'active' : ''}`} onClick={() => setViewMode('corpcard')}>법인카드</button>
+            <button type="button" className={`chip ${viewMode === 'daily' ? 'active' : ''}`} onClick={() => setViewMode('daily')}>자금일보</button>
+            <span className="filter-divider" />
+            {/* 기간 단위 — 월/분기/연 */}
+            <button type="button" className={`chip ${periodMode === 'month' ? 'active' : ''}`} onClick={() => setPeriodMode('month')}>월</button>
+            <button type="button" className={`chip ${periodMode === 'quarter' ? 'active' : ''}`} onClick={() => setPeriodMode('quarter')}>분기</button>
+            <button type="button" className={`chip ${periodMode === 'year' ? 'active' : ''}`} onClick={() => setPeriodMode('year')}>연</button>
+            <span className="filter-divider" />
+            {/* 기간 이동 */}
+            <button type="button" className="chip" onClick={() => shiftPeriod(-1)} title="이전 기간">◀</button>
+            <strong className="mono" style={{ minWidth: 80, textAlign: 'center', fontSize: 12 }}>{periodLabel}</strong>
+            <button type="button" className="chip" onClick={() => shiftPeriod(1)} title="다음 기간">▶</button>
+            <button type="button" className="chip" onClick={gotoCurrent} title="현재 기간으로">당월</button>
           </div>
         </header>
-
-        <SubNav items={FINANCE_SUB} />
 
         <div className="dashboard" style={{ gridTemplateColumns: '1fr' }}>
           <div className="panel">
             <div className="panel-body">
+              {viewMode !== 'account' && (
+                <div className="muted center" style={{ padding: 56, fontSize: 13 }}>
+                  {viewMode === 'autopay' && '자동이체 내역 — 엑셀 일괄 업로드로 등록'}
+                  {viewMode === 'card' && '카드매출 내역 — PG/단말 매출 엑셀 업로드로 등록'}
+                  {viewMode === 'corpcard' && '법인카드 사용내역 — 카드사 엑셀 업로드로 등록'}
+                  {viewMode === 'daily' && '자금일보 — 입력된 거래를 자동 집계 (세무사·관리자 보고용)'}
+                  <div className="muted" style={{ marginTop: 8, fontSize: 11 }}>준비 중 — 하단 액션으로 업로드 시 표시됨</div>
+                </div>
+              )}
+              {viewMode === 'account' && (
               <table className="table">
                 <thead>
                   <tr>
@@ -176,6 +229,7 @@ export default function FinancePage() {
                   })}
                 </tbody>
               </table>
+              )}
             </div>
           </div>
         </div>
@@ -183,12 +237,26 @@ export default function FinancePage() {
         <BottomBar
           left={
             <>
-              <button className="btn btn-primary" type="button">+ 거래 등록</button>
+              <button
+                className="btn btn-primary"
+                type="button"
+                onClick={() => setCreateOpen(true)}
+                title="계좌/자동이체/카드매출/법인카드 1건 등록 (다이얼로그에서 종류 선택)"
+              >
+                <Plus size={14} weight="bold" /> 신규 등록
+              </button>
               <span className="btn-sep" />
-              <button className="btn" type="button">엑셀</button>
+              <button className="btn" type="button" title="현재 표시중 거래내역 엑셀 다운로드">엑셀</button>
             </>
           }
           right={null}
+        />
+
+        <CreateDialog
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          visibleModes={['입출금', '자동이체', '카드매출', '법인카드']}
+          initialMode="입출금"
         />
       </div>
     </div>

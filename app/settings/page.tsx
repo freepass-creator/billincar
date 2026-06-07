@@ -11,8 +11,10 @@ import { BottomBar } from '@/components/layout/bottom-bar';
 import { useAuth, logout } from '@/lib/use-auth';
 import { useRole } from '@/lib/use-role';
 import { useSettings, type Theme, type FontFamily, type FontSize, type Density, type Radius, type Accent } from '@/lib/use-settings';
+import { MENU_LABELS, DEFAULT_VISIBILITY, loadVisibility, saveVisibility, type MenuKey } from '@/components/layout/sidebar';
+import { useEffect as useEffectMenu } from 'react';
 
-type Tab = 'display' | 'account' | 'admin';
+type Tab = 'display' | 'menu' | 'account' | 'admin';
 
 export default function SettingsPage() {
   const [tab, setTab] = useState<Tab>('display');
@@ -36,6 +38,10 @@ export default function SettingsPage() {
             <button type="button" className={`page-shell-nav-item ${tab === 'display' ? 'active' : ''}`} onClick={() => setTab('display')}>
               <Sun size={14} weight={tab === 'display' ? 'fill' : 'regular'} />
               <span>화면</span>
+            </button>
+            <button type="button" className={`page-shell-nav-item ${tab === 'menu' ? 'active' : ''}`} onClick={() => setTab('menu')}>
+              <Gear size={14} weight={tab === 'menu' ? 'fill' : 'regular'} />
+              <span>메뉴 표시</span>
             </button>
             <button type="button" className={`page-shell-nav-item ${tab === 'account' ? 'active' : ''}`} onClick={() => setTab('account')}>
               <User size={14} weight={tab === 'account' ? 'fill' : 'regular'} />
@@ -76,6 +82,7 @@ export default function SettingsPage() {
 
           <main className="page-shell-main">
             {tab === 'display' && <DisplaySettings />}
+            {tab === 'menu' && <MenuVisibilitySettings />}
             {tab === 'account' && <AccountSettings />}
             {tab === 'admin' && <AdminSettings />}
           </main>
@@ -85,6 +92,7 @@ export default function SettingsPage() {
           right={
             <span>
               {tab === 'display' && '화면 — 테마 · 글꼴 · 글자 크기 · 행 밀도'}
+              {tab === 'menu' && '메뉴 표시 — 사이드바에 보이는 메뉴 선택 (운영현황·설정은 필수)'}
               {tab === 'account' && `로그인 — ${user?.email ?? '-'}`}
               {tab === 'admin' && '관리 — 일일 면허재검증 · 데이터 정비'}
             </span>
@@ -464,6 +472,37 @@ function Kpi({ label, value, alert }: { label: string; value: string; alert?: bo
     <div>
       <div style={{ fontSize: 10, color: 'var(--text-weak)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>{label}</div>
       <div style={{ fontSize: 14, fontWeight: 600, color: alert ? 'var(--red-text)' : 'var(--text-main)' }}>{value}</div>
+    </div>
+  );
+}
+
+/* ─────────────── 메뉴 표시 설정 ─────────────── */
+
+function MenuVisibilitySettings() {
+  const [vis, setVis] = useState<Record<MenuKey, boolean>>(DEFAULT_VISIBILITY);
+  useEffectMenu(() => { setVis(loadVisibility()); }, []);
+  function toggle(k: MenuKey) {
+    const next = { ...vis, [k]: !vis[k] };
+    setVis(next); saveVisibility(next);
+  }
+  function reset() { setVis(DEFAULT_VISIBILITY); saveVisibility(DEFAULT_VISIBILITY); }
+  const orderedKeys: MenuKey[] = ['dashboard', 'receivables', 'asset', 'contract', 'finance', 'penalty', 'general', 'devtools'];
+  return (
+    <div className="settings-card" style={{ padding: 24 }}>
+      <div style={{ marginBottom: 12, fontSize: 12, color: 'var(--text-sub)' }}>
+        사이드바에 노출할 메뉴를 선택하세요. <strong>운영현황</strong>과 <strong>설정</strong>은 항상 표시됩니다.
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {orderedKeys.map((k) => (
+          <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', background: vis[k] ? 'var(--bg-card)' : 'var(--bg-sunken)' }}>
+            <input type="checkbox" checked={vis[k] !== false} onChange={() => toggle(k)} />
+            <span style={{ fontSize: 13, fontWeight: vis[k] ? 600 : 400, color: vis[k] ? 'var(--text-main)' : 'var(--text-sub)' }}>{MENU_LABELS[k]}</span>
+          </label>
+        ))}
+      </div>
+      <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end' }}>
+        <button className="btn btn-sm" type="button" onClick={reset}>모두 표시 (초기화)</button>
+      </div>
     </div>
   );
 }

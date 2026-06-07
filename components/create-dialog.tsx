@@ -479,7 +479,7 @@ export function CreateDialog({
               )}
               {visibleModes.includes('입출금') && (
                 <Tabs.Trigger value="입출금" className="tabs-trigger">
-                  입출금 등록
+                  수납 입력
                   {paymentsCount > 0 && <span className="count">{paymentsCount}</span>}
                 </Tabs.Trigger>
               )}
@@ -1175,13 +1175,18 @@ function VehicleManualForm({ onSubmit }: { onSubmit: () => void }) {
 }
 
 function VehicleOcrPane({ onSubmit }: { onSubmit: () => void }) {
-  const { add: addVehicle } = useVehicles();
+  const { vehicles, add: addVehicle, update: updateVehicle } = useVehicles();
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [extracted, setExtracted] = useState<{ plate: string; model: string; company: string; vin?: string; year?: string } | null>(null);
+  const [matchedVehicle, setMatchedVehicle] = useState<import('@/lib/types').Vehicle | null>(null);
 
-  async function handleSave() {
+  function normalizePlate(p: string): string {
+    return p.replace(/[\s\-·.]/g, '').toLowerCase();
+  }
+
+  async function handleSaveAsNew() {
     if (!extracted || saving) return;
     setSaving(true);
     try {
@@ -1205,15 +1210,44 @@ function VehicleOcrPane({ onSubmit }: { onSubmit: () => void }) {
     }
   }
 
+  async function handleUpdateExisting(mode: 'diff' | 'overwrite') {
+    if (!extracted || !matchedVehicle || saving) return;
+    setSaving(true);
+    try {
+      const merged: import('@/lib/types').Vehicle = { ...matchedVehicle };
+      const setIf = (cur: string | undefined, next: string) => {
+        if (mode === 'overwrite') return next || cur || '';
+        return (cur && cur !== '미정') ? cur : (next || cur || '');
+      };
+      merged.plate = setIf(matchedVehicle.plate, extracted.plate.trim());
+      merged.model = setIf(matchedVehicle.model, extracted.model.trim());
+      // 차대번호/연식은 notes에 누적되는 패턴이라 별도 prepend
+      const ocrLine = [
+        extracted.vin && `차대번호 ${extracted.vin}`,
+        extracted.year && `${extracted.year}년식`,
+        `OCR 갱신 (${mode === 'overwrite' ? '덮어쓰기' : '차이만 갱신'})`,
+      ].filter(Boolean).join(' / ');
+      merged.notes = matchedVehicle.notes
+        ? `${ocrLine}\n${matchedVehicle.notes}`
+        : ocrLine;
+      await updateVehicle(merged);
+      onSubmit();
+    } catch (e) {
+      alert('차량 갱신 실패: ' + ((e as Error).message ?? String(e)));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleImage(file: File) {
     setBusy(true);
     setError(null);
+    setMatchedVehicle(null);
     try {
       const fd = new FormData();
       fd.append('file', file);
       fd.append('type', 'vehicle_reg');
 
-      // Firebase ID token (서버 requireAuth)
       const { getFirebaseAuth } = await import('@/lib/firebase/client');
       const auth = getFirebaseAuth();
       const user = auth?.currentUser;
@@ -1227,13 +1261,23 @@ function VehicleOcrPane({ onSubmit }: { onSubmit: () => void }) {
       const json = await res.json();
       if (!json.ok) throw new Error(json.error || 'OCR 실패');
       const raw = json.extracted as Record<string, unknown>;
-      setExtracted({
+      const next = {
         plate: String(raw.car_number ?? raw.plate ?? ''),
         model: String(raw.car_name ?? raw.model ?? ''),
         company: String(raw.owner_name ?? raw.company ?? ''),
         vin: String(raw.vin ?? raw.chassis_no ?? '') || undefined,
         year: String(raw.year_model ?? raw.model_year ?? '') || undefined,
+      };
+      setExtracted(next);
+
+      // 신규/기존 판별: plate 정규화 매칭 우선, 없으면 vin 매칭
+      const np = normalizePlate(next.plate);
+      const found = vehicles.find((v) => {
+        if (np && normalizePlate(v.plate) === np) return true;
+        if (next.vin && v.notes?.includes(next.vin)) return true;
+        return false;
       });
+      setMatchedVehicle(found ?? null);
     } catch (e) {
       setError((e as Error).message ?? String(e));
     } finally {
@@ -1254,16 +1298,70 @@ function VehicleOcrPane({ onSubmit }: { onSubmit: () => void }) {
   }
 
   if (extracted) {
+    const isExisting = !!matchedVehicle;
+    const diff = matchedVehicle ? [
+      { field: '차량번호', cur: matchedVehicle.plate, next: extracted.plate },
+      { field: '차종', cur: matchedVehicle.model, next: extracted.model },
+      { field: '회사', cur: matchedVehicle.company, next: extracted.company },
+    ].filter((r) => r.next && r.cur !== r.next) : [];
+
     return (
       <form
-        onSubmit={(e) => { e.preventDefault(); void handleSave(); }}
+        onSubmit={(e) => { e.preventDefault(); if (!isExisting) void handleSaveAsNew(); }}
         style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: 1 }}
       >
-        <div className="detail-section">
-          <div className="detail-section-header" style={{ color: 'var(--green-text)' }}>
+        {/* 판별 결과 배너 */}
+        <div
+          className="detail-section"
+          style={{
+            borderColor: isExisting ? 'var(--orange-border)' : 'var(--green-border)',
+            background: isExisting ? 'var(--orange-bg)' : 'var(--green-bg)',
+          }}
+        >
+          <div className="detail-section-header" style={{ color: isExisting ? 'var(--orange-text)' : 'var(--green-text)' }}>
             <CheckCircle size={12} weight="duotone" />
-            <span className="title">OCR 추출 완료 — 확인 후 저장</span>
-            <button type="button" className="btn btn-sm" onClick={() => setExtracted(null)}>다시 스캔</button>
+            <span className="title">
+              {isExisting
+                ? `이미 등록된 차량입니다 — ${matchedVehicle!.plate} ${matchedVehicle!.model}`
+                : '신규 차량 — 시스템에 등록되지 않은 등록증입니다'}
+            </span>
+            <button type="button" className="btn btn-sm" onClick={() => { setExtracted(null); setMatchedVehicle(null); }}>다시 스캔</button>
+          </div>
+          {isExisting && (
+            <div className="detail-section-body" style={{ fontSize: 11, color: 'var(--text)' }}>
+              {diff.length === 0
+                ? '추출된 정보가 기존 정보와 동일합니다 — 차대번호/연식만 비고에 추가됩니다.'
+                : (
+                  <div>
+                    <div style={{ marginBottom: 6, fontWeight: 600 }}>변경 항목 ({diff.length}개):</div>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                      <thead>
+                        <tr style={{ background: 'var(--bg-soft)' }}>
+                          <th style={{ padding: '4px 8px', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>필드</th>
+                          <th style={{ padding: '4px 8px', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>기존</th>
+                          <th style={{ padding: '4px 8px', textAlign: 'left', borderBottom: '1px solid var(--border)', color: 'var(--orange-text)' }}>OCR (변경 후)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {diff.map((r) => (
+                          <tr key={r.field}>
+                            <td style={{ padding: '3px 8px' }}>{r.field}</td>
+                            <td style={{ padding: '3px 8px', color: 'var(--text-weak)' }}>{r.cur || '-'}</td>
+                            <td style={{ padding: '3px 8px', color: 'var(--orange-text)', fontWeight: 600 }}>{r.next}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+            </div>
+          )}
+        </div>
+
+        {/* 추출 정보 편집 */}
+        <div className="detail-section">
+          <div className="detail-section-header">
+            <span className="title">OCR 추출 정보 — 편집 가능</span>
           </div>
           <div className="detail-section-body">
             <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: '10px 14px', alignItems: 'center' }}>
@@ -1290,11 +1388,43 @@ function VehicleOcrPane({ onSubmit }: { onSubmit: () => void }) {
         </div>
 
         <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button type="button" className="btn" onClick={() => setExtracted(null)}>취소</button>
-          <button type="submit" className="btn btn-primary" disabled={saving}>
-            {saving ? <CircleNotch size={14} weight="bold" style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle size={14} />}
-            {saving ? '저장 중...' : '등록'}
-          </button>
+          <button type="button" className="btn" onClick={() => { setExtracted(null); setMatchedVehicle(null); }}>취소</button>
+          {isExisting ? (
+            <>
+              <button
+                type="button"
+                className="btn"
+                disabled={saving}
+                onClick={() => void handleSaveAsNew()}
+                title="동일 차량번호가 있더라도 새 row로 추가"
+              >
+                신규로 추가
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={saving}
+                onClick={() => void handleUpdateExisting('diff')}
+                title="기존 값이 미정인 항목만 채움 + OCR 메모 추가"
+              >
+                차이만 갱신
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={saving}
+                onClick={() => void handleUpdateExisting('overwrite')}
+              >
+                {saving ? <CircleNotch size={14} weight="bold" style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle size={14} />}
+                {saving ? '저장 중...' : '덮어쓰기 갱신'}
+              </button>
+            </>
+          ) : (
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? <CircleNotch size={14} weight="bold" style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle size={14} />}
+              {saving ? '저장 중...' : '신규 등록'}
+            </button>
+          )}
         </div>
       </form>
     );
@@ -3133,7 +3263,7 @@ function PaymentManualForm({ onSubmit, variant }: { onSubmit: () => void; varian
           {saving ? <CircleNotch size={14} weight="bold" style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle size={14} />}
           {saving
             ? '저장 중...'
-            : variant === '입출금' ? '입출금 등록'
+            : variant === '입출금' ? '수납 입력'
             : variant === '자동이체' ? '자동이체 등록'
             : variant === '카드매출' ? '카드매출 등록'
             : '법인카드 등록'}
