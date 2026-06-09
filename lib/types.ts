@@ -50,6 +50,8 @@ export type Contract = {
   customerLicenseType?: string;      // 1종/2종 등
   // 주운전자 — 법인 계약일 때 또는 계약자 ≠ 운전자일 때만. 비어있으면 customerName이 운전자.
   driverName?: string;
+  /** 주운전자 식별번호 — 주민번호(개인). 만연령·보험가능연령 매칭용. 비어있으면 customerIdentNo 사용 */
+  driverIdentNo?: string;
   // 차량 (임베드)
   vehiclePlate: string;
   vehicleModel: string;            // 자동 결합 풀네임 (예: '현대 아반떼 더 뉴 그랜저 GN7 가솔린 3.5 AWD 캘리그래피')

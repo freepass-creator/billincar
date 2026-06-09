@@ -98,6 +98,10 @@ export function parseContractRow(row: Row): Omit<Contract, 'id'> | null {
   const licenseNoRaw = toStr(get(row, '면허번호', 'customerLicenseNo', 'licenseNo'));
   const licenseTypeRaw = toStr(get(row, '면허종별', 'customerLicenseType', 'licenseType'));
   const driverNameRaw = toStr(get(row, '주운전자', 'driverName'));
+  // 주운전자 등록번호 — 보통 주민번호. 운영현황 만연령 산출 + 보험연령 매칭에 사용.
+  // 엑셀 컬럼 예: "운전자등록번호" / "운전자주민번호" / "운전자생년월일" 등. driverIdentNo 키도 허용.
+  const driverIdentRaw = toStr(get(row, '운전자등록번호', '운전자주민번호', '운전자생년월일', '주운전자등록번호', '주운전자주민번호', 'driverIdentNo'));
+  const driverIdentDigits = normalizeIdent(driverIdentRaw);
 
   return {
     contractNo,
@@ -110,6 +114,7 @@ export function parseContractRow(row: Row): Omit<Contract, 'id'> | null {
     customerLicenseNo: licenseNoRaw || undefined,
     customerLicenseType: licenseTypeRaw || undefined,
     driverName: driverNameRaw || undefined,
+    driverIdentNo: driverIdentDigits || undefined,
     customerPhone1: phone1,
     customerPhone2: toStr(get(row, '연락처2', 'customerPhone2')) || undefined,
     customerRegion: toStr(get(row, '지역', 'customerRegion')) || undefined,

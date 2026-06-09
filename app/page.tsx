@@ -24,6 +24,7 @@ import { SmsDialog } from '@/components/sms-dialog';
 import { ContextMenu, type ContextMenuItem } from '@/components/ui/context-menu';
 import { useAuth } from '@/lib/use-auth';
 import { isSuperAdmin } from '@/lib/admin-emails';
+import { ageFromIdent } from '@/lib/ident';
 import {
   getExpiryDate, daysToExpiry,
   getVehicleState, getContractState, getPaymentState,
@@ -97,7 +98,7 @@ function matchesCompany(c: Contract, co: string): boolean {
 }
 
 /** 컬럼 정렬 키 — 수동 정렬 시 클릭한 컬럼명 */
-type SortCol = '회사' | '차량상태' | '차량번호' | '차종' | '사용처' | '연락처' | '보험연령' | '계약상태' | '시작일' | '종료일' | '결제일' | '회차' | '반납까지' | '수납상태' | '미수금';
+type SortCol = '회사' | '차량상태' | '차량번호' | '차종' | '사용처' | '연락처' | '운전자나이' | '보험연령' | '계약상태' | '시작일' | '종료일' | '결제일' | '회차' | '반납까지' | '수납상태' | '미수금';
 type SortDir = 'asc' | 'desc';
 
 const VS_ORDER: VehicleState[] = [
@@ -108,6 +109,18 @@ const VS_ORDER: VehicleState[] = [
 const CS_ORDER: ContractState[] = ['위반', '미수검', '연장대기', '종료대기', '만기경과', '만기임박', '계약중'];
 const PS_ORDER: PaymentState[] = ['미납', '정상', '휴차', '종결'];
 
+/**
+ * 주운전자 만연령 — driverIdentNo 우선, 없으면 계약자 주민번호(개인 계약일 때).
+ * 등록번호가 잘못됐거나 법인 계약이면 undefined.
+ */
+function driverAge(c: Contract): number | undefined {
+  if (c.driverIdentNo) return ageFromIdent(c.driverIdentNo, '개인');
+  if (c.customerKind === '개인' || (!c.customerKind && (c.customerIdentNo ?? '').replace(/\D/g, '').length === 13)) {
+    return ageFromIdent(c.customerIdentNo, '개인');
+  }
+  return undefined;
+}
+
 function compareForCol(a: Contract, b: Contract, col: SortCol): number {
   switch (col) {
     case '회사': return a.company.localeCompare(b.company);
@@ -116,6 +129,7 @@ function compareForCol(a: Contract, b: Contract, col: SortCol): number {
     case '차종': return a.vehicleModel.localeCompare(b.vehicleModel);
     case '사용처': return resolveUsage(a).localeCompare(resolveUsage(b));
     case '연락처': return a.customerPhone1.localeCompare(b.customerPhone1);
+    case '운전자나이': return (driverAge(a) ?? 0) - (driverAge(b) ?? 0);
     case '보험연령': return (a.insuranceAge ?? 0) - (b.insuranceAge ?? 0);
     case '계약상태': return CS_ORDER.indexOf(getContractState(a).name) - CS_ORDER.indexOf(getContractState(b).name);
     case '시작일': return (resolveStartDate(a) ?? '').localeCompare(resolveStartDate(b) ?? '');
@@ -647,6 +661,7 @@ export default function Page() {
                   <SortableTh col="차종" sort={manualSort} onSort={toggleSort} />
                   <SortableTh col="사용처" width={96} sort={manualSort} onSort={toggleSort} />
                   <SortableTh col="연락처" width={116} sort={manualSort} onSort={toggleSort} />
+                  <SortableTh col="운전자나이" align="center" width={70} sort={manualSort} onSort={toggleSort} />
                   <SortableTh col="보험연령" align="center" width={70} sort={manualSort} onSort={toggleSort} />
                   <SortableTh col="계약상태" align="center" width={80} sort={manualSort} onSort={toggleSort} />
                   <SortableTh col="시작일" align="center" width={88} sort={manualSort} onSort={toggleSort} />
@@ -724,6 +739,23 @@ export default function Page() {
                           })()}
                         </td>
                         <td className="mono dim">{c.customerPhone1}</td>
+                        {/* 운전자 만연령 — 보험연령보다 어리면 빨강 (운전 불가) */}
+                        <td className="center mono">
+                          {(() => {
+                            const a = driverAge(c);
+                            if (a == null) return <span className="muted">-</span>;
+                            const ia = c.insuranceAge ?? 0;
+                            const blocked = ia > 0 && a < ia;
+                            return (
+                              <span
+                                style={{ color: blocked ? 'var(--red-text)' : 'var(--text-sub)', fontWeight: blocked ? 700 : undefined }}
+                                title={blocked ? `운전 불가 — 운전자 ${a}세 < 보험연령 ${ia}세` : undefined}
+                              >
+                                {a}세{blocked && ' ⚠'}
+                              </span>
+                            );
+                          })()}
+                        </td>
                         {/* 보험연령 */}
                         <td className="center mono dim">
                           {c.insuranceAge ? `${c.insuranceAge}세` : <span className="muted">-</span>}

@@ -92,3 +92,21 @@ export function birthFromIdent(raw: string | undefined, kind: CustomerKind | und
   const century = (g === '1' || g === '2') ? 1900 : 2000;
   return `${century + parseInt(yy, 10)}-${mm}-${dd}`;
 }
+
+/** 만연령 계산 — YYYY-MM-DD 생일 기준, 오늘(asOfYmd, 기본 today) 시점 */
+export function ageFromBirth(birth: string | undefined, asOfYmd?: string): number | undefined {
+  if (!birth || birth.length < 10) return undefined;
+  const today = asOfYmd ?? new Date().toISOString().slice(0, 10);
+  const [by, bm, bd] = birth.slice(0, 10).split('-').map(Number);
+  const [ty, tm, td] = today.slice(0, 10).split('-').map(Number);
+  if (!by || !bm || !bd || !ty) return undefined;
+  let age = ty - by;
+  if (tm < bm || (tm === bm && td < bd)) age -= 1;
+  return age >= 0 ? age : undefined;
+}
+
+/** 주민번호에서 만연령 직접 산출 — 개인만 */
+export function ageFromIdent(raw: string | undefined, kind: CustomerKind | undefined, asOfYmd?: string): number | undefined {
+  const birth = birthFromIdent(raw, kind);
+  return birth ? ageFromBirth(birth, asOfYmd) : undefined;
+}
