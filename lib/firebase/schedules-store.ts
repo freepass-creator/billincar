@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { ref, onValue, set, remove as rtdbRemove, push } from 'firebase/database';
+import { ref, onValue, set, update as rtdbUpdate, remove as rtdbRemove, push } from 'firebase/database';
 import { getRtdb, dbPath, isFirebaseConfigured, ensureAuth, pruneUndefined } from './client';
 import { audit } from './audit-store';
 import type { ManualSchedule } from '@/lib/types';
@@ -67,5 +67,23 @@ export function useSchedules() {
       await rtdbRemove(ref(db, `${PATH}/${id}`));
       void audit.delete('system', id, `스케줄 삭제 ${id}`);
     },
+
+    toggleDone: async (id: string, done: boolean): Promise<void> => {
+      const patch = { done, doneAt: done ? new Date().toISOString() : undefined };
+      if (!configured) {
+        setSchedules((prev) => prev.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+        return;
+      }
+      await ensureAuth();
+      const db = getRtdb(); if (!db) return;
+      await rtdbUpdate(ref(db, `${PATH}/${id}`), pruneUndefined(patch as Record<string, unknown>));
+      void audit.update('system', id, `스케줄 ${done ? '완료' : '재오픈'} ${id}`);
+    },
   };
+}
+
+/** 미해소 = done 아니고 + 날짜 지남 (오늘 포함 안 함) */
+export function isScheduleStale(s: import('@/lib/types').ManualSchedule, today: string): boolean {
+  if (s.done) return false;
+  return s.date < today;
 }

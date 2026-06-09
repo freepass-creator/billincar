@@ -706,11 +706,20 @@ function ScheduleCalendar({ contracts, onSelectContract }: { contracts: import('
   const [year, month] = today.split('-').map(Number);
   const [dialogYmd, setDialogYmd] = useState<string | null>(null);
   const { schedules } = useSchedules();
+  // 일자별 일정 카운트 + 미해소 여부 (오늘 이전 + done 안 됨)
   const manualByYmd = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const s of schedules) m.set(s.date, (m.get(s.date) ?? 0) + 1);
+    const m = new Map<string, { open: number; done: number; stale: number }>();
+    for (const s of schedules) {
+      const cur = m.get(s.date) ?? { open: 0, done: 0, stale: 0 };
+      if (s.done) cur.done += 1;
+      else {
+        cur.open += 1;
+        if (s.date < today) cur.stale += 1;
+      }
+      m.set(s.date, cur);
+    }
     return m;
-  }, [schedules]);
+  }, [schedules, today]);
   const firstDay = new Date(year, month - 1, 1);
   const lastDay = new Date(year, month, 0);
   const startWeekday = firstDay.getDay(); // 0=일
@@ -786,14 +795,22 @@ function ScheduleCalendar({ contracts, onSelectContract }: { contracts: import('
               >
                 <div style={{ fontSize: 11, fontWeight: isToday ? 700 : 500, color: weekday === 0 ? 'var(--red-text)' : weekday === 6 ? 'var(--blue-text, var(--brand))' : 'var(--text-main)' }}>{cell.day}</div>
                 {(() => {
-                  const manualCount = manualByYmd.get(cell.ymd) ?? 0;
-                  if (!ev && manualCount === 0) return null;
+                  const m = manualByYmd.get(cell.ymd);
+                  const totalManual = (m?.open ?? 0) + (m?.done ?? 0);
+                  if (!ev && totalManual === 0) return null;
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 9 }}>
                       {ev && ev.expire > 0 && <span style={{ color: 'var(--orange-text)' }}>● 만기 {ev.expire}</span>}
                       {ev && ev.return > 0 && <span style={{ color: 'var(--red-text)' }}>● 반납 {ev.return}</span>}
                       {ev && ev.renew > 0 && <span style={{ color: 'var(--green-text)' }}>● 신규 {ev.renew}</span>}
-                      {manualCount > 0 && <span style={{ color: 'var(--brand)' }}>● 일정 {manualCount}</span>}
+                      {m && m.open > 0 && (
+                        <span style={{ color: m.stale > 0 ? 'var(--red-text)' : 'var(--brand)', fontWeight: m.stale > 0 ? 700 : 500 }}>
+                          {m.stale > 0 ? '⚠' : '●'} 일정 {m.open}
+                        </span>
+                      )}
+                      {m && m.done > 0 && m.open === 0 && (
+                        <span style={{ color: 'var(--green-text)' }}>✓ 완료 {m.done}</span>
+                      )}
                     </div>
                   );
                 })()}
@@ -824,7 +841,7 @@ function ScheduleDetailDialog({
 }) {
   const open = !!ymd;
   const today = todayKr();
-  const { schedules, add: addSchedule, remove: removeSchedule } = useSchedules();
+  const { schedules, add: addSchedule, remove: removeSchedule, toggleDone: toggleScheduleDone } = useSchedules();
   const [draftTitle, setDraftTitle] = useState('');
   const [draftTime, setDraftTime] = useState('');
 
@@ -920,10 +937,11 @@ function ScheduleDetailDialog({
           );
         })}
 
-        {/* 수동 추가 스케줄 — 입력 + 리스트 */}
+        {/* 일정 — 시간 + 제목만, 미해소는 경고 강조 */}
         <section className="detail-section">
-          <div className="detail-section-header">일정 추가</div>
+          <div className="detail-section-header">일정</div>
           <div className="detail-section-body" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {/* 입력 한 줄 — 시간 + 제목 + Enter */}
             <div style={{ display: 'flex', gap: 6 }}>
               <input
                 type="time"
@@ -931,64 +949,61 @@ function ScheduleDetailDialog({
                 value={draftTime}
                 onChange={(e) => setDraftTime(e.target.value)}
                 style={{ width: 100, fontSize: 12 }}
-                title="시간 (선택)"
               />
               <input
                 type="text"
                 className="input input-compact"
-                placeholder="일정 제목 (예: 보험사 미팅, 차량 입고 등)"
+                placeholder="일정 입력 후 Enter (예: 보험사 미팅)"
                 value={draftTitle}
                 onChange={(e) => setDraftTitle(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') void handleAddSchedule(); }}
                 style={{ flex: 1, fontSize: 12 }}
+                autoFocus
               />
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => void handleAddSchedule()}
-                disabled={!draftTitle.trim()}
-              >
-                추가
-              </button>
             </div>
-            {daySchedules.length === 0 ? (
-              <div className="dim" style={{ fontSize: 12, textAlign: 'center', padding: '8px 0' }}>
-                추가된 일정이 없습니다.
-              </div>
-            ) : (
+            {daySchedules.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {daySchedules.map((s) => (
-                  <div key={s.id} style={{
-                    display: 'flex', alignItems: 'center', gap: 10,
-                    padding: '8px 10px',
-                    background: 'var(--bg-card)',
-                    border: '1px solid var(--border-soft)',
-                    borderLeft: '3px solid var(--brand)',
-                    borderRadius: 'var(--radius-sm)',
-                    fontSize: 12,
-                  }}>
-                    {s.time && (
-                      <span className="mono" style={{ fontWeight: 700, color: 'var(--brand)', minWidth: 44 }}>{s.time}</span>
-                    )}
-                    <span style={{ flex: 1, color: 'var(--text-main)', fontWeight: 600 }}>{s.title}</span>
-                    <button
-                      type="button"
-                      onClick={() => void removeSchedule(s.id)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-weak)', padding: 2, fontSize: 14, lineHeight: 1 }}
-                      title="삭제"
-                    >×</button>
-                  </div>
-                ))}
+                {daySchedules.map((s) => {
+                  const stale = !s.done && ymd && ymd < today;
+                  const accent = stale ? 'var(--red-text)' : s.done ? 'var(--green-text)' : 'var(--brand)';
+                  return (
+                    <div key={s.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '8px 10px',
+                      background: stale ? 'var(--red-bg)' : 'var(--bg-card)',
+                      border: '1px solid var(--border-soft)',
+                      borderLeft: `3px solid ${accent}`,
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: 12,
+                      opacity: s.done ? 0.6 : 1,
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={!!s.done}
+                        onChange={() => void toggleScheduleDone(s.id, !s.done)}
+                        title={s.done ? '완료 — 재오픈' : '처리 완료로 표시'}
+                      />
+                      {s.time && (
+                        <span className="mono" style={{ fontWeight: 700, color: accent, minWidth: 44 }}>{s.time}</span>
+                      )}
+                      <span style={{
+                        flex: 1, color: 'var(--text-main)', fontWeight: 600,
+                        textDecoration: s.done ? 'line-through' : 'none',
+                      }}>{s.title}</span>
+                      {stale && <span style={{ fontSize: 11, color: 'var(--red-text)', fontWeight: 700 }}>⚠ 지연</span>}
+                      <button
+                        type="button"
+                        onClick={() => void removeSchedule(s.id)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-weak)', padding: 2, fontSize: 14, lineHeight: 1 }}
+                        title="삭제"
+                      >×</button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
         </section>
-
-        {items.length === 0 && daySchedules.length === 0 && (
-          <div style={{ padding: 12, textAlign: 'center', color: 'var(--text-sub)', fontSize: 12 }}>
-            예정된 만기·반납·신규 계약은 없습니다. 위에서 일정을 추가할 수 있습니다.
-          </div>
-        )}
       </div>
     </DetailDialogShell>
   );

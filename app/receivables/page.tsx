@@ -16,7 +16,7 @@ import { displayCompanyName } from '@/lib/company-display';
 import { useHistoryEntries } from '@/lib/firebase/history-store';
 import { downloadOverdueExcel } from '@/lib/contract-export';
 import { useAuth } from '@/lib/use-auth';
-import { isAdmin } from '@/lib/admin-emails';
+import { useRole } from '@/lib/use-role';
 import { toast } from '@/lib/toast';
 import { todayKr } from '@/lib/mock-data';
 import { friendlyError } from '@/lib/friendly-error';
@@ -92,7 +92,7 @@ export default function ReceivablesPage() {
   const { companies: companyMaster } = useCompanies();
   const { entries: history, add: addHistory } = useHistoryEntries();
   const { user } = useAuth();
-  const admin = isAdmin(user?.email);
+  const { isAdmin: admin } = useRole();
   const [filter, setFilter] = useState<Filter>('미납중');
   const [companyFilter, setCompanyFilter] = useState<string>('all');
   const [search, setSearch] = useState('');

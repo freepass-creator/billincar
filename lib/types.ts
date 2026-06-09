@@ -548,6 +548,8 @@ export type ManualSchedule = {
   date: string;          // YYYY-MM-DD
   title: string;
   time?: string;         // HH:MM (선택)
+  done?: boolean;        // 처리 완료 여부
+  doneAt?: string;       // 완료 ISO
   notes?: string;
   createdAt: string;
   createdBy?: string;

@@ -16,9 +16,13 @@ export const ADMIN_EMAILS: ReadonlyArray<string> = [
 ];
 
 export function isSuperAdmin(email?: string | null): boolean {
-  return !!email;
+  if (!email) return false;
+  const e = email.toLowerCase();
+  return SUPER_ADMIN_EMAILS.some((x) => x.toLowerCase() === e);
 }
 
 export function isAdmin(email?: string | null): boolean {
-  return !!email;
+  if (!email) return false;
+  const e = email.toLowerCase();
+  return ADMIN_EMAILS.some((x) => x.toLowerCase() === e);
 }

@@ -2,22 +2,23 @@
 
 import { ShieldWarning } from '@phosphor-icons/react';
 import { useAuth } from '@/lib/use-auth';
-import { isAdmin, ADMIN_EMAILS } from '@/lib/admin-emails';
+import { useRole } from '@/lib/use-role';
 
 /**
  * Admin 전용 페이지 가드.
- * AuthGate 통과 후(로그인됨)에도 admin 이메일이 아니면 차단.
+ * 마스터(SUPER_ADMIN 화이트리스트) + RTDB role='admin' 부여된 직원 통과.
  *
  * 사용:
  *   <AdminGate><MyAdminPage /></AdminGate>
  */
 export function AdminGate({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
+  const { isAdmin: admin, loading: roleLoading } = useRole();
 
-  if (loading) return null;
+  if (loading || roleLoading) return null;
   if (!user) return null; // AuthGate 가 처리
 
-  if (!isAdmin(user.email)) {
+  if (!admin) {
     return (
       <div style={{
         height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -35,9 +36,9 @@ export function AdminGate({ children }: { children: React.ReactNode }) {
           <div style={{ fontSize: 12, color: 'var(--text-sub)', lineHeight: 1.6 }}>
             현재 로그인 — <span className="mono">{user.email}</span>
             <br />
-            이 페이지는 관리자({ADMIN_EMAILS.length}명)만 접근할 수 있습니다.
+            이 페이지는 관리자만 접근할 수 있습니다.
             <br />
-            <span className="dim" style={{ fontSize: 11 }}>권한 추가는 lib/admin-emails.ts 수정 후 재배포 필요</span>
+            <span className="dim" style={{ fontSize: 11 }}>권한 부여는 마스터에게 문의 — 계정관리에서 admin role 지정</span>
           </div>
         </div>
       </div>
