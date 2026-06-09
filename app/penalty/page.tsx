@@ -406,10 +406,10 @@ export default function PenaltyPage() {
         <div className="app">
         <header className="topbar">
           <div className="topbar-title">
-            <Receipt size={16} weight="fill" style={{ color: 'var(--orange-text)' }} />
+            <Receipt size={16} weight="fill" style={{ color: 'var(--brand)' }} />
             <span>과태료 업무</span>
           </div>
-          <div className="filter-bar" role="tablist" aria-label="단계" style={{ marginLeft: 16 }}>
+          <div className="filter-bar" role="tablist" aria-label="단계">
             <button
               type="button"
               className={`chip ${phase === 'in-progress' ? 'active' : ''}`}

@@ -10,7 +10,8 @@ import {
   signOut as fbSignOut,
   type User,
 } from 'firebase/auth';
-import { getFirebaseAuth } from './firebase/client';
+import { ref, get, update as rtdbUpdate } from 'firebase/database';
+import { getFirebaseAuth, getRtdb, dbPath, ensureAuth, pruneUndefined } from './firebase/client';
 
 /**
  * jpkerp5 인증 — 이메일/비밀번호 (jpkerp-v4 패턴).
@@ -32,6 +33,14 @@ if (typeof window !== 'undefined') {
       cache = u;
       initialized = true;
       listeners.forEach((l) => l(u));
+      // 로그인 사용자 RTDB users/{uid} backfill — 기존 가입자도 명단에 보강
+      if (u) {
+        void upsertUserProfile({
+          uid: u.uid,
+          email: u.email ?? '',
+          displayName: u.displayName ?? undefined,
+        });
+      }
     });
   } else {
     initialized = true;
@@ -87,4 +96,44 @@ export async function signup(input: SignupInput): Promise<void> {
   if (!auth) throw new Error('Firebase Auth 미설정');
   const cred = await createUserWithEmailAndPassword(auth, input.email.trim(), input.password);
   await fbUpdateProfile(cred.user, { displayName: input.displayName.trim() });
+  // RTDB users/{uid} 에 마스터 정보 저장 — admin SDK 없어도 staff 명단 조회 가능
+  await upsertUserProfile({
+    uid: cred.user.uid,
+    email: input.email.trim(),
+    displayName: input.displayName.trim(),
+    department: input.department,
+    phone: input.phone,
+  });
+}
+
+/** RTDB users/{uid} upsert — 가입/첫 로그인 시 호출. 기존 role 등 필드는 보존. */
+export async function upsertUserProfile(input: {
+  uid: string;
+  email: string;
+  displayName?: string;
+  department?: string;
+  phone?: string;
+}): Promise<void> {
+  try {
+    await ensureAuth();
+    const db = getRtdb();
+    if (!db) return;
+    const userRef = ref(db, dbPath('users', input.uid));
+    const snap = await get(userRef);
+    const existing = (snap.val() ?? {}) as Record<string, unknown>;
+    const now = new Date().toISOString();
+    const next = pruneUndefined({
+      ...existing,
+      uid: input.uid,
+      email: input.email,
+      displayName: input.displayName ?? (existing.displayName as string | undefined),
+      department: input.department ?? (existing.department as string | undefined),
+      phone: input.phone ?? (existing.phone as string | undefined),
+      createdAt: (existing.createdAt as string | undefined) ?? now,
+      lastSeenAt: now,
+    });
+    await rtdbUpdate(userRef, next);
+  } catch (e) {
+    console.warn('[auth] upsertUserProfile failed', e);
+  }
 }
