@@ -1,11 +1,11 @@
 {
-  "name": "jpkerp5",
+  "name": "billincar",
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbo -p 7502",
+    "dev": "next dev --turbo -p 7503",
     "build": "next build",
-    "start": "next start -p 7502",
+    "start": "next start -p 7503",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
