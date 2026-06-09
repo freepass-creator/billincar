@@ -7,7 +7,7 @@ import {
 import { useAuth } from '@/lib/use-auth';
 import Link from 'next/link';
 
-const STORAGE_PREFIX = 'jpkerp5_onboarding_done_';
+const STORAGE_PREFIX = 'billincar_onboarding_done_';
 
 type Step = {
   icon: React.ReactNode;
@@ -19,7 +19,7 @@ type Step = {
 const STEPS: Step[] = [
   {
     icon: <Sparkle size={48} weight="duotone" />,
-    title: 'jpkerp5에 오신 것을 환영합니다',
+    title: '렌터카매니저에 오신 것을 환영합니다',
     desc: '차량 렌탈 ERP — 차량·계약·수납을 한 곳에서 관리',
     detail: (
       <div style={{ fontSize: 13, color: 'var(--text-sub)', lineHeight: 1.7 }}>

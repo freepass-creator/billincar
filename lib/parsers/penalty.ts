@@ -1,5 +1,5 @@
 /**
- * 과태료/통행료/범칙금 고지서 OCR 파서 — jpkerp penalty.js 이식.
+ * 과태료/통행료/범칙금 고지서 OCR 파서 — billincar penalty.js 이식.
  */
 
 export interface PenaltyParsed {

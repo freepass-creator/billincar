@@ -1,6 +1,6 @@
 # 신규 고객사 배포 가이드
 
-> jpkerp5 (마스터 코드베이스)를 새로운 회사에 배포하는 단계별 가이드.
+> billincar (마스터 코드베이스)를 새로운 회사에 배포하는 단계별 가이드.
 > 회사마다 **Firebase 프로젝트 분리 + Vercel 프로젝트 분리 + 도메인 분리**.
 > 코드는 fork 또는 template copy 후 회사별 customization.
 
@@ -21,14 +21,14 @@
 ## 1. GitHub repo 복사
 
 ### 옵션 A — Template repo로 복사 (권장)
-1. https://github.com/freepass-creator/jpkerp5 진입
+1. https://github.com/freepass-creator/billincar 진입
 2. 우측 상단 **`Use this template`** → `Create a new repository`
 3. Owner / 새 repo 이름: `carting-{회사명}` (예: `carting-스위치플랜`)
 4. Private 권장 → **Create repository**
 
 ### 옵션 B — 로컬에서 clone + 새 repo로 push
 ```bash
-git clone https://github.com/freepass-creator/jpkerp5 carting-회사명
+git clone https://github.com/freepass-creator/billincar carting-회사명
 cd carting-회사명
 # 원본 remote 제거 후 새 repo 연결
 git remote remove origin
@@ -222,7 +222,7 @@ export const SUPER_ADMIN_EMAILS: ReadonlyArray<string> = [
 ### 7-5. Firebase 데이터 prefix (선택)
 **`lib/firebase/client.ts`**
 ```ts
-export const RTDB_ROOT = 'jpkerp5';   // ← 회사별로 다르게 (예: 'carting001')
+export const RTDB_ROOT = 'billincar';   // ← 회사별로 다르게 (예: 'carting001')
 ```
 > 같은 Firebase를 여러 회사가 쓰는 경우에만 필요. **회사별 Firebase 분리 시 그대로 둬도 됨** (데이터는 어차피 격리됨).
 
@@ -243,11 +243,11 @@ export const RTDB_ROOT = 'jpkerp5';   // ← 회사별로 다르게 (예: 'carti
 
 ## 9. 마스터 업데이트 받아오기
 
-마스터(`jpkerp5`)에서 새 기능이 나오면:
+마스터(`billincar`)에서 새 기능이 나오면:
 
 ```bash
 cd carting-회사명
-git remote add upstream https://github.com/freepass-creator/jpkerp5
+git remote add upstream https://github.com/freepass-creator/billincar
 git fetch upstream
 git merge upstream/main
 # 충돌 시 7번에서 수정한 파일들만 회사 버전 유지

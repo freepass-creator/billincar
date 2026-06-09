@@ -13,7 +13,7 @@ export default function HelpPage() {
   function restartTour() {
     if (!user) return;
     try {
-      localStorage.removeItem(`jpkerp5_onboarding_done_${user.uid}`);
+      localStorage.removeItem(`billincar_onboarding_done_${user.uid}`);
       location.reload();
     } catch { /* ignore */ }
   }

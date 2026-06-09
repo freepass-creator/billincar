@@ -2988,7 +2988,7 @@ function PastePaneFooter({
 
 /** localStorage 기반 — 변종별 최근 선택 (회사/계좌/카드) 기억 */
 function lastKey(variant: PaymentVariant, field: 'company' | 'account' | 'card'): string {
-  return `jpkerp5_last_${variant}_${field}`;
+  return `billincar_last_${variant}_${field}`;
 }
 function readLast(variant: PaymentVariant, field: 'company' | 'account' | 'card'): string {
   if (typeof window === 'undefined') return '';

@@ -12,7 +12,7 @@ const PATH = dbPath('history_entries');
  * 차량·계약 이력 — 정비·사고·검사·세차·위반·보험·부품교체 (vehicle scope)
  *                    + 분쟁·클레임·수납이슈·메모·연락기록 (contract scope)
  *
- *   /jpkerp5/history_entries/{id}
+ *   /billincar/history_entries/{id}
  */
 export function useHistoryEntries(): {
   entries: HistoryEntry[];

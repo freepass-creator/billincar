@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 /* ═══════════════════════════════════════════════════════════════
- * jpkerp5 — Modern UI (Linear / Vercel inspired)
+ * billincar — Modern UI (Linear / Vercel inspired)
  * ═══════════════════════════════════════════════════════════════ */
 
 :root {
@@ -12,7 +12,7 @@
   --font-mono: 'Pretendard Variable', 'JetBrains Mono', Consolas, ui-monospace, monospace;
   --font-size: 12px;
 
-  /* ─── 폰트 사이즈 토큰 (jpkerp5 표준) ─── */
+  /* ─── 폰트 사이즈 토큰 (billincar 표준) ─── */
   --text-xs:   10px;   /* 보조 메타·작은 라벨 */
   --text-sm:   11px;   /* 부가 정보·각주 */
   --text-base: 12px;   /* 기본 본문·표·버튼 */
@@ -1862,7 +1862,7 @@ input[type="radio"]:disabled {
   color: var(--text-inverse);
 }
 
-/* ────────────── Auth — 로그인/회원가입/재설정 (jpkerp-v4 포팅) ────────────── */
+/* ────────────── Auth — 로그인/회원가입/재설정 (billincar-v4 포팅) ────────────── */
 .auth-shell {
   min-height: 100vh;
   min-height: 100dvh;

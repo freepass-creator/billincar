@@ -312,7 +312,7 @@ export default function Page() {
     open: false, x: 0, y: 0, row: null,
   });
 
-  // Firebase RTDB 실시간 구독 — /jpkerp5/contracts
+  // Firebase RTDB 실시간 구독 — /billincar/contracts
   const { contracts: rawContracts, loading: contractsLoading, update: rtdbUpdate, updateMany: rtdbUpdateMany, remove: rtdbRemove } = useContracts();
   const { vehicles, update: updateVehicleMaster } = useVehicles();
 

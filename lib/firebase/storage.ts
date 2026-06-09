@@ -7,7 +7,7 @@
  *     file,
  *   });
  *
- * 경로 규약 — gs://{bucket}/jpkerp5/{kind}/{ownerKey}/{timestamp}-{filename}
+ * 경로 규약 — gs://{bucket}/billincar/{kind}/{ownerKey}/{timestamp}-{filename}
  *   · kind:    registration | insurance | contract
  *   · ownerKey: 차량번호 또는 계약번호 (한글 등 특수문자 그대로 OK — Storage가 인코딩)
  *
@@ -19,7 +19,7 @@ import { getFirebaseApp } from './client';
 
 export type DocKind = 'registration' | 'insurance' | 'contract';
 
-const DOC_PREFIX = 'jpkerp5';
+const DOC_PREFIX = 'billincar';
 
 export type UploadedDoc = {
   url: string;

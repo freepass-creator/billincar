@@ -14,7 +14,7 @@
 
 import type { AuditMeta } from './audit-log';
 
-const SESSION_KEY = 'jpkerp-v4:audit-session-id';
+const SESSION_KEY = 'billincar-v4:audit-session-id';
 
 let cachedIp: string | undefined;
 let ipPromise: Promise<string | undefined> | null = null;

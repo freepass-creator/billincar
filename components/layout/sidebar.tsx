@@ -11,8 +11,8 @@ import { useRole } from '@/lib/use-role';
 
 type SidebarProps = Record<string, never>;
 
-const COLLAPSE_KEY = 'jpkerp5_sidebar_collapsed';
-const VISIBILITY_KEY = 'jpkerp5_sidebar_visibility';
+const COLLAPSE_KEY = 'billincar_sidebar_collapsed';
+const VISIBILITY_KEY = 'billincar_sidebar_visibility';
 
 /** 사이드바 메뉴 가시성 — 사용자가 설정 페이지에서 토글. 운영현황·설정은 항상 표시. */
 export type MenuKey =
@@ -59,7 +59,7 @@ export function saveVisibility(v: Record<MenuKey, boolean>) {
   if (typeof window === 'undefined') return;
   localStorage.setItem(VISIBILITY_KEY, JSON.stringify(v));
   // 사이드바가 즉시 재렌더하도록 storage 이벤트 강제 디스패치
-  window.dispatchEvent(new Event('jpkerp5_visibility_changed'));
+  window.dispatchEvent(new Event('billincar_visibility_changed'));
 }
 
 export function Sidebar(_props: SidebarProps = {} as SidebarProps) {
@@ -74,10 +74,10 @@ export function Sidebar(_props: SidebarProps = {} as SidebarProps) {
     if (saved === '1') setCollapsed(true);
     setVisibility(loadVisibility());
     function onChange() { setVisibility(loadVisibility()); }
-    window.addEventListener('jpkerp5_visibility_changed', onChange);
+    window.addEventListener('billincar_visibility_changed', onChange);
     window.addEventListener('storage', onChange);
     return () => {
-      window.removeEventListener('jpkerp5_visibility_changed', onChange);
+      window.removeEventListener('billincar_visibility_changed', onChange);
       window.removeEventListener('storage', onChange);
     };
   }, []);

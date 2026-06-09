@@ -23,7 +23,7 @@ export function DialogContent({
   children: ReactNode;
   /** 헤더 타이틀. 없으면 헤더 표시 안함 */
   title?: ReactNode;
-  /** 크기 — md 기본 (jpkerp5 표준). lg/xl 은 동일 (이미 큼) */
+  /** 크기 — md 기본 (billincar 표준). lg/xl 은 동일 (이미 큼) */
   size?: Size;
   width?: number;
   className?: string;

@@ -14,7 +14,7 @@ import { ref, get, update as rtdbUpdate } from 'firebase/database';
 import { getFirebaseAuth, getRtdb, dbPath, ensureAuth, pruneUndefined } from './firebase/client';
 
 /**
- * jpkerp5 인증 — 이메일/비밀번호 (jpkerp-v4 패턴).
+ * billincar 인증 — 이메일/비밀번호 (billincar-v4 패턴).
  *
  *  const { user, loading } = useAuth();
  *  await login(email, password);

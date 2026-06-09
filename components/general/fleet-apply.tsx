@@ -205,7 +205,7 @@ function FleetApplyDialog({ c, pending: pendingProp, onClose }: { c: MockCompany
     };
 
     try {
-      localStorage.setItem('jpkerp5_fleet_apply_print', JSON.stringify(payload));
+      localStorage.setItem('billincar_fleet_apply_print', JSON.stringify(payload));
       window.open('/general/fleet-apply/print', '_blank');
     } catch (e) {
       alert(`인쇄 페이지 열기 실패: ${(e as Error).message ?? String(e)}`);

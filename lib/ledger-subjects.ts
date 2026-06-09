@@ -1,6 +1,6 @@
 /**
  * 자금일보 계정과목 — 입금/출금/내부이체 분류.
- * v4 lib/sample-finance.ts 의 계정과목표를 jpkerp5 운영에 맞게 정리.
+ * v4 lib/sample-finance.ts 의 계정과목표를 billincar 운영에 맞게 정리.
  */
 
 /** 입금 계정과목 — 회사로 들어오는 자금 */

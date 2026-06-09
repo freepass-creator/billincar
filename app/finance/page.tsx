@@ -2,7 +2,7 @@
 
 /**
  * /finance — 재무 관리 메인 (거래내역 ledger).
- * v4 finance/page.tsx 의 컬럼 구조 그대로 + jpkerp5 BankTx 데이터.
+ * v4 finance/page.tsx 의 컬럼 구조 그대로 + billincar BankTx 데이터.
  * 표 기반 (대시보드 카드 X) — 자산/계약과 동일한 list-first 패턴.
  */
 

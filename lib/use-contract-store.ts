@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * v4 호환 어댑터 — jpkerp5의 useContracts 를 v4 의 useContractStore 시그니처로 매핑.
+ * v4 호환 어댑터 — billincar의 useContracts 를 v4 의 useContractStore 시그니처로 매핑.
  * 과태료 모듈에서 사용 — 차량번호로 활성 계약 찾기.
  */
 

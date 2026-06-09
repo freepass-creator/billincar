@@ -1,7 +1,7 @@
 /**
  * 손님 자가조회 — 차량번호 + 등록번호 매칭 + PII 마스킹.
  *
- * jpkerp5 Contract 타입 호환:
+ * billincar Contract 타입 호환:
  *   - vehiclePlate (v4의 plate)
  *   - customerIdentNo (v4의 customerIdent)
  *   - customerPhone1 (v4의 customerPhone)

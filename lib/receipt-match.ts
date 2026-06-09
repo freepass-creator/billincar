@@ -1,7 +1,7 @@
 /**
  * 자금일보 자동 매칭 — 은행 입금 → 계약 미납 회차.
  *
- * v4 lib/receipt-match.ts 포팅. jpkerp5의 인라인 schedule 모델에 맞게 단순화.
+ * v4 lib/receipt-match.ts 포팅. billincar의 인라인 schedule 모델에 맞게 단순화.
  *
  * 알고리즘:
  *   1) 입금 거래 (withdraw 없고 amount > 0)

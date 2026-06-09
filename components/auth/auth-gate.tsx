@@ -55,15 +55,14 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 function Brand() {
   return (
     <div className="auth-brand">
-      <span className="auth-brand__base">team</span>
-      <span className="auth-brand__main">jpk</span>{' '}
+      <span className="auth-brand__main">렌터카매니저</span>{' '}
       <span className="auth-brand__erp">ERP</span>
     </div>
   );
 }
 
 function Copyright() {
-  return <div className="auth-copyright">&copy; {new Date().getFullYear()} teamjpk. All Rights Reserved.</div>;
+  return <div className="auth-copyright">&copy; {new Date().getFullYear()} 렌터카매니저. All Rights Reserved.</div>;
 }
 
 function AuthLink({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
@@ -199,7 +198,7 @@ function SignupScreen({ onBack }: { onBack: () => void }) {
       <section className="auth-card" aria-label="계정 만들기">
         <header className="auth-card__head">
           <h2 className="auth-card__title">계정 만들기</h2>
-          <p className="auth-card__sub">jpkerp5 직원 계정을 만듭니다.</p>
+          <p className="auth-card__sub">렌터카매니저 직원 계정을 만듭니다.</p>
         </header>
         <form onSubmit={handleSubmit} className="auth-form" noValidate>
           <div className="auth-field">

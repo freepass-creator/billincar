@@ -3,8 +3,8 @@ import { getDatabase, type Database } from 'firebase/database';
 import { getAuth, onAuthStateChanged, type Auth } from 'firebase/auth';
 
 /**
- * jpkerp5 Firebase 클라이언트 — RTDB + Auth.
- * 공유 Firebase 프로젝트(jpkerp)를 쓰지만 노드 prefix = '/jpkerp5/...' 로 독립.
+ * billincar Firebase 클라이언트 — RTDB + Auth.
+ * 공유 Firebase 프로젝트(billincar)를 쓰지만 노드 prefix = '/billincar/...' 로 독립.
  */
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? '',
@@ -36,7 +36,7 @@ export function getFirebaseApp(): FirebaseApp | null {
   }
   if (!isFirebaseConfigured()) {
     if (typeof window !== 'undefined') {
-      console.warn('[jpkerp5] Firebase 미설정 — .env에 NEXT_PUBLIC_FIREBASE_* 등록 필요');
+      console.warn('[billincar] Firebase 미설정 — .env에 NEXT_PUBLIC_FIREBASE_* 등록 필요');
     }
     return null;
   }

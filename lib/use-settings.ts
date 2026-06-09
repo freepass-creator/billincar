@@ -133,7 +133,7 @@ function ensureFontLoaded(family: FontFamily) {
   loadedFonts.add(family);
 }
 
-const STORAGE_KEY = 'jpkerp5:settings';
+const STORAGE_KEY = 'billincar:settings';
 
 const FONT_STACKS: Record<FontFamily, { font: string; mono: string }> = {
   pretendard: {
