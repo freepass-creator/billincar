@@ -54,15 +54,21 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
 function Brand() {
   return (
-    <div className="auth-brand">
-      <span className="auth-brand__main">렌터카매니저</span>{' '}
-      <span className="auth-brand__erp">ERP</span>
+    <div className="auth-brand" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+      <span style={{
+        fontSize: 32, fontWeight: 800, color: 'var(--brand)',
+        letterSpacing: '-0.03em', lineHeight: 1,
+      }}>빌린카</span>
+      <span style={{ fontSize: 12, color: 'var(--text-sub)', letterSpacing: '0.04em', fontWeight: 500 }}>
+        <span className="auth-brand__main">렌터카매니저</span>{' '}
+        <span className="auth-brand__erp">ERP</span>
+      </span>
     </div>
   );
 }
 
 function Copyright() {
-  return <div className="auth-copyright">&copy; {new Date().getFullYear()} 렌터카매니저. All Rights Reserved.</div>;
+  return <div className="auth-copyright">&copy; {new Date().getFullYear()} 빌린카 · 렌터카매니저 ERP. All Rights Reserved.</div>;
 }
 
 function AuthLink({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {

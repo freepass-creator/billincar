@@ -1,6 +1,6 @@
 import { ImageResponse } from 'next/og';
 
-export const alt = '렌터카매니저 — 렌터카 운영 ERP';
+export const alt = '빌린카 — 렌터카매니저 ERP';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
@@ -52,10 +52,10 @@ export default function Image() {
               textTransform: 'uppercase',
             }}
           >
-            RENTCAR MANAGER
+            BILLINCAR · RENTCAR MANAGER
           </div>
 
-          {/* 큰 한글 제품명 */}
+          {/* 큰 한글 제품명 — 빌린카 */}
           <div
             style={{
               display: 'flex',
@@ -65,7 +65,21 @@ export default function Image() {
               lineHeight: 1.05,
             }}
           >
-            렌터카매니저
+            빌린카
+          </div>
+
+          {/* 보조 — 렌터카매니저 ERP */}
+          <div
+            style={{
+              display: 'flex',
+              fontSize: 36,
+              fontWeight: 700,
+              color: 'rgba(255,255,255,0.7)',
+              letterSpacing: -1,
+              marginTop: 4,
+            }}
+          >
+            렌터카매니저 ERP
           </div>
 
           {/* 강조 막대 */}
