@@ -16,8 +16,8 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID ?? '',
 };
 
-/** 데이터 노드 prefix — v4는 root 직접 사용, v5는 /v5/... 로 분리. */
-export const RTDB_ROOT = 'v5';
+/** 데이터 노드 prefix — 회사별 격리. billincar 데모는 마스터 Firebase 임시 공유, 데이터는 /billincar_demo/ 로 분리. */
+export const RTDB_ROOT = 'billincar_demo';
 
 let _app: FirebaseApp | null = null;
 let _rtdb: Database | null = null;
